@@ -36,7 +36,7 @@ basic_eda(data)
 
 # CLEANING THE DATA
 # First removing columns with over 70% missing data 
-threshold <- 50  # threshold for missing values
+threshold <- 70  # threshold for missing values
 data <- data[, which(colMeans(!is.na(data)) > (threshold / 100))]
 vis_miss(data)
 
@@ -72,6 +72,8 @@ data$`ICU Admit Date-Time`[is.na(data$`ICU Admit Date-Time`)] <-
 avg_icu_stay <- median(data$`ICU Discharge Date-Time` - data$`ICU Admit Date-Time`, na.rm = TRUE)
 data$`ICU Discharge Date-Time`[is.na(data$`ICU Discharge Date-Time`)] <- 
   data$`ICU Admit Date-Time`[is.na(data$`ICU Discharge Date-Time`)] + avg_icu_stay
+
+vis_miss(data)
 
 # Omitting Last missing NA value 
 data <- na.omit(data)
