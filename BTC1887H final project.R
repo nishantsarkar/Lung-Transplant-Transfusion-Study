@@ -18,8 +18,6 @@ glimpse(data) # 192 patiens observations and 117 columns
               # 1st column is study id
               #column 112 to 115 do not make sense; no variable name just a number and all NA values so will remove them later
 
-
-
 #make.names function to ensure all column names are valid R names. This function will replace spaces and special characters with dots (.) and ensure names are unique and syntactically valid in R.
 names(data) <- make.names(names(data), unique = TRUE)
 
@@ -42,13 +40,31 @@ missing_data <- vis_miss(data) # 24.7% missingness in all the dataset
 
 # if large enough dataset with multiple variables, consider multiple imputation if the missingness is random (MCAR OR MAR). 
 # however, if certain variables have a very high percentage of missing data, consider excluding them from your analysis or use domain knowledge to impute them more accurately.
+# additionally, if predictor is irrevelant to begin with and you won't need it in your analysis, you can exclude it
+
+
+################### 1ST Q ASKS: What are the characteristics of patients that require transfusions, and what are the factors influencing the need and amount of transfusions?
+### Need to consider variables that describe patient characteristics and factors that might influence the need for a transfusion
+### Relevent sections include: 
+# Orange (Patient Demographic Data)
+# Green (Underlying Respiratory Diagnosis + Intraoperative Descriptions): patient's respiratory health status and details about their lung transplant surgery, which could influence the need for transfusions
+# Yellow (Blood Product Transfusion Data)
+
+
+################# 2nd Q ASKS: What is the impact of transfusion on patient outcomes, including mortality?
+
+## Need to analyze the relationship between transfusion data and patient outcomes, so we need:
+# Yellow (Blood Product Transfusion Data)
+# Blue (Survival and ICU LOS Data): Variables related to patient survival (like mortality rates at different time points post-transplant) and the length of stay in the ICU..
+# Red (Preoperative Bloodwork): Information such as hemoglobin levels, platelets, etc..
+
+
+
 
 
 # check missingness for each predictor
 missing_percentages <- sapply(data, function(x) sum(is.na(x)) / length(x) * 100)
 missing_percentages
-
-
 # Duration of Mechanical Ventilation with 34.38% missing --> time-dependent variable so missinginess  might be informative in itself and needs careful consideration
 
 # Let's eliminate columns with 70% or more missinginess
@@ -97,6 +113,12 @@ filter70_data <- filter70_data %>%
 #low_variance <- names(variances[variances < some_threshold])  # Set some_threshold appropriately
 
 
+
+
+
+
+
+
 # let's analyze each variable with missing values 
 ###### 1) DCD.vs.DBD which ahs 7.27% missingness
 # this variable relates to the donor itself (not patient); different types of organ donors used in lung transplantation
@@ -113,12 +135,14 @@ table(filter70_data$DCD.vs.DBD)
 # ..results may lack accuracy & validity but say no difference in organ quality just different means in presevring the organ (Elmer A. 2022)
 ######## I recommend we remove it for now but we can do available case analysis for it at the end to see if it impacts patient survival-related outcomes or we can use logreg to impute
 
-# Let's change the 2 FALSE encoded values to NA so it is easier to perform any sort of analysis on this predictor
+# Let's change the 2 FALSE encoded values to NA so it is easier to perform any sort of analysis on this predictor if we want to use it later no
 filter70_data <- filter70_data %>% 
   mutate(DCD.vs.DBD = ifelse(DCD.vs.DBD == "FALSE", NA, DCD.vs.DBD))
-table(filter70_data$DCD.vs.DBD)
+
+table(filter70_data$DCD.vs.DBD) # we have 119 DBD, 45 DCD, 12 NDD
 
 
+# remove the DCD predictor
 filterDCD_data <- filter70_data %>% 
   select(-DCD.vs.DBD)
 
@@ -127,8 +151,36 @@ colnames(missing) <- "Percent_Missing"
 
 ########## LAS.score 6.25%
 # it is a lung allocation score; used with blood type and the distance between the candidate and the donor hospital to determine priority for receiving a lung transplant
+# it is important because if we have a higher score, then this means the patient is in urgent need for an organ and probably impacts its need for blood transufions 
+# since its scores(numeric), use pmm method for when doing multiple imputation
 
 
+######### Pre_PTT (partial thromboplastin time) 0.52%
+# time it takes for a clot to form in a blood sample
+# imp as could influence need of transfusion
+
+####### Protamine..Y.1.N.0. 41.6% missingness
+# used to counteract the anticoagulant effect of heparin aka given when we have risk of bleeding
+table(filter70_data$Protamine..Y.1.N.0.) 
+# it should take values of 0s and 1s where 0 means it was NOT administered vs 1 meaning opposit 
+# however, 3 values are 25, 150, and 400 so lets encode it as 
+
+# let's change these values to NA and encode protamine as factor
+filter70_data <- filter70_data %>% 
+  mutate(Protamine..Y.1.N.0. = ifelse(Protamine..Y.1.N.0. %in% c(25, 150, 400), NA, Protamine..Y.1.N.0.)) %>%
+  mutate(Protamine..Y.1.N.0. = factor(Protamine..Y.1.N.0.))
+
+table(filter70_data$Protamine..Y.1.N.0.) # double check to see if 25, 150, and 400 are removed 
+levels(filter70_data$Protamine..Y.1.N.0.) # douuble check to see if its a factor
+
+
+#### Blood.Loss 1.042 % missing 
+table(filter70_data$Blood.Loss) # looks good in terms of legit values and its a necessary predictor
+# same for urine output and fluid balance
+
+
+
+missing
 # run the mice code to get the default methods to later store it as default 
 default_method <- mice(filter70_data, maxit=0)
 
