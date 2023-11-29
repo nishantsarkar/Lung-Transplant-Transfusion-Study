@@ -93,27 +93,60 @@ glimpse(filter70_data)
 # be aware of Date.of.Extubation which is encoded as character (but should be dttm) 
 
 ###### All variables encoded as chr but should be factor: 
-# Type, Gender, BMI, COPD, alpha1 antitrysin deficiency, Cystic Fibrosis,	Idiopathic Pulmonary Hypertension,	Interstitial
-# Lung Disease,	Pulm_Other,	Coronary Artery Disease,	Hypertension,	Diabetes (insulin),	Diabetes (diet/OHGs),	GERD/PUD,	Renal Failure,	Stroke/CVA,	Liver Disease,
-# Thyroid Disease,	First Lung Transplant,	Redo Lung Transplant,	DCD vs DBD,	ExVIVO Lung Perfusion,	Preoperative ECLS
-#ECLS_ECMO, ECLS_CPD, 
+# Type, Gender,COPD, alpha1-Antitrypsin Deficiency, Cystic Fibrosis, Idiopathic Pulmonary Hypertension, 
+# Interstitial Lung Disease, Pulm_Other, Coronary Artery Disease, Hypertension, Diabetes (insulin), Diabetes (diet/OHGs), 
+# GERD/PUD, Renal Failure, Stroke/CVA, Liver Disease, Thyroid Disease, First Lung Transplant, Redo Lung Transplant, ExVIVO Lung Perfusion, 
+# Preoperative ECLS, Intraoperative ECLS, ECLS_ECMO, ECLS_CPB, Protamine (Y=1 N=0), Tranexamic Acid Used, Need for reoperation for bleeding within 24h, ALIVE_30DAYS_YN, ALIVE_90DAYS_YN, ALIVE_12MTHS_YN
 
 
 # Intraoperative.ECLS encoded as lgl but should be factor 
-# Protamine..Y.1.N.0. ecnoded as dbl but should be factor
+# Protamine..Y.1.N.0. ecnoded as dbl but should be factor and it should take values of 0s and 1s where 0 means it was NOT administered vs 1 meaning opposite
+# however, 3 values are 25, 150, and 400 so lets let's change these values to NA 
+table(filter70_data$Protamine..Y.1.N.0.) 
+
+# and encode protamine as factor
+
+table(filter70_data$Protamine..Y.1.N.0.) # double check to see if 25, 150, and 400 are removed 
+levels(filter70_data$Protamine..Y.1.N.0.) # douuble check to see if its a factor
 
 # Intra_Albumin.5...mL. is chr but should be dbl (not factor)
 table(filter70_data$Intra_Albumin.5...mL.)
 # has a weird value of 0+AQ7.. change to 0
 
 # Date.of.Extubation column was processed weirdly when loaded into R (not proceessed as the other date and time as the other date/time variable)
-filter70_data$Date.of.Extubation <- as.POSIXct(as.Date(as.numeric(filter70_data$Date.of.Extubation), origin = "1899-12-30"), format = "%Y-%m-%d %H:%M", tz = "UTC")
+filter70_data$Date.of.Extubation <- as.POSIXct(as.numeric(filter70_data$Date.of.Extubation) * (60*60*24),
+                                               origin="1899-12-30", tz="UTC")
 
+#Massive transfusion is dbl but represented as 0s and 1s, so its a binary indicator
 
-filter70_data <- filter70_data %>% 
-  mutate_if(is.character, as.factor)
+#### Ensure dates are in dttm 
+# OR Date, ICU Admission Date/Time, ICU Discharge Date/Time, Date of Extubation, ICU Admit Date-Time, ICU Discharge Date-Time, Extubation Date
 
-# imputation errors are resulting and this could be due to: 
+######### Now, lets incorporate all these changes: 
+
+library(dplyr)
+
+filter70_data <- filter70_data %>%
+  # Convert all character variables to factors, except for Intra_Albumin.5...mL.
+  mutate_if(~ is.character(.) && !identical(colnames(.), "Intra_Albumin.5...mL."), as.factor) %>%
+  
+  # Convert Intraoperative.ECLS to factor
+  mutate(Intraoperative.ECLS = as.factor(Intraoperative.ECLS)) %>%
+  
+  # Convert Protamine..Y.1.N.0. to factor after handling specific cases
+  mutate(Protamine..Y.1.N.0. = ifelse(Protamine..Y.1.N.0. %in% c(25, 150, 400), NA, Protamine..Y.1.N.0.),
+         Protamine..Y.1.N.0. = as.factor(Protamine..Y.1.N.0.)) %>%
+  
+  # Handle the odd value in Intra_Albumin.5...mL. and convert to numeric
+  mutate(Intra_Albumin.5...mL. = ifelse(Intra_Albumin.5...mL. == "0+AQ7", "0", Intra_Albumin.5...mL.),
+         Intra_Albumin.5...mL. = as.double(Intra_Albumin.5...mL.)) %>%
+  # Encode massive transfusion as factor 
+  mutate(Massive.Transfusion = as.factor(Massive.Transfusion))
+
+#double check 
+glimpse(filter70_data)
+
+# Imputation errors are resulting when running MI and this could be due to: 
 # 1) High Collinearity: If data have variables that are highly correlated with each other, it can cause multicollinearity problems in regression models.
 # can check using VIF
 # library(car)
@@ -133,7 +166,7 @@ filter70_data <- filter70_data %>%
 
 # Let's analyze each variable with missing values so MI runs properly 
 
-###### 1) DCD.vs.DBD which ahs 7.27% missingness
+###### 1) DCD.vs.DBD which has 7.27% missingness
 # this variable relates to the donor itself (not patient); different types of organ donors used in lung transplantation
 table(filter70_data$DCD.vs.DBD)
 # DBD: Donation after brain death involves donation of organs after the patient meets criteria for death by neurological criteria.
@@ -154,12 +187,9 @@ filter70_data <- filter70_data %>%
 
 table(filter70_data$DCD.vs.DBD) # we have 119 DBD, 45 DCD, 12 NDD
 
-
-# remove the DCD predictor
+# remove the DCD predictor if we decide its unnecessary 
 filterDCD_data <- filter70_data %>% 
   select(-DCD.vs.DBD)
-
-
 
 ########## LAS.score 6.25%
 # it is a lung allocation score; used with blood type and the distance between the candidate and the donor hospital to determine priority for receiving a lung transplant
@@ -173,18 +203,6 @@ filterDCD_data <- filter70_data %>%
 
 ####### Protamine..Y.1.N.0. 41.6% missingness
 # used to counteract the anticoagulant effect of heparin aka given when we have risk of bleeding
-table(filter70_data$Protamine..Y.1.N.0.) 
-# it should take values of 0s and 1s where 0 means it was NOT administered vs 1 meaning opposit 
-# however, 3 values are 25, 150, and 400 so lets encode it as 
-
-# let's change these values to NA and encode protamine as factor
-filter70_data <- filter70_data %>% 
-  mutate(Protamine..Y.1.N.0. = ifelse(Protamine..Y.1.N.0. %in% c(25, 150, 400), NA, Protamine..Y.1.N.0.)) %>%
-  mutate(Protamine..Y.1.N.0. = factor(Protamine..Y.1.N.0.))
-
-table(filter70_data$Protamine..Y.1.N.0.) # double check to see if 25, 150, and 400 are removed 
-levels(filter70_data$Protamine..Y.1.N.0.) # douuble check to see if its a factor
-
 
 ####### Blood.Loss 1.042 % missing 
 table(filter70_data$Blood.Loss) # looks good in terms of legit values and its a necessary predictor
@@ -210,6 +228,30 @@ table(filter70_data$Duration.of.ICU.Stay..days.) # looks fine
 # Duration.of.Mechanical.Ventilation..days. 34.3750000
 
 
+### lets do a side by side comparison to see where difference is
+comparison_data <- filter70_data %>%
+  select(
+    ICU.Admission.Date.Time,
+    ICU.Admit.Date.Time,
+    ICU.Discharge.Date.Time,
+    ICU.Discharge.Date.Time.1,
+    Duration.of.ICU.Stay..days.,
+    Duration.of.ICU.stay..days.,
+    Date.of.Extubation,
+    Extubation.Date,
+    Duration.of.Ventilation,
+    Duration.of.Mechanical.Ventilation..days.) 
+# let's remove the latter ones as they have more missingess compared to the former ones
+
+filter70_data <- filter70_data %>%
+  select(
+    -ICU.Admit.Date.Time,
+    -ICU.Discharge.Date.Time.1,
+    -Duration.of.ICU.stay..days.,
+    -Extubation.Date,
+    -Duration.of.Mechanical.Ventilation..days.
+  )
+
 
 ###### Duration of ventilation 30.2% 
 table(filter70_data$Duration.of.Ventilation) # looks fine
@@ -221,33 +263,57 @@ table(filter70_data$PostImmediate_Fibrinogen)
 table(filter70_data$Pre_Creatinine)
 #### to be aware of: PTT and fibrogen have negative values, which I think could indicitate very very low levels but to having negative levels is not plausible
 
-
 ######### PostDay Measurements (4)
-#### In PostDay1_PTT, we have one negative value
+## In PostDay1_PTT, we have one negative value
 ## can be used in patient need for transfusion
-
 
 ######## RBC.0.24hrs 68.75%
 table(filter70_data$RBC.0.24hrs) # looks good in terms of not having abnormal values 
 # however, RBC 24-48hrs	RBC 48-72hrs had more than 70% missingness so they were reomved
 # we only have 0-24 and 72 hour total as of now. 
 # since there's a lot of missingness in 0-24hrs, we can decide to select only the RBC count at the  72hr total timeframe. 
-
 filter70_data <- filter70_data %>%
   select(-RBC.0.24hrs)
 
-######## ICU Admission and Discharge Data/Time with 16.6% and 17.7% missingness, respectively 
-## Since we have the duration of ICU stay and because its hard to impute date/time values, we can remove these two variables
+######### PGD.at.72hrs..Grade.0.3. 50%
+# Primary Graft Dysfunction" assessed at 72 hours post-transplant, graded on a scale from 0 to 3.
+# a form of acute lung injury that occurs within the first 72 hours after lung transplantation.
+# Grade 0: Indicates no PGD or normal lung function; Grade 1: Suggests mild PGD; Grade 2: Represents moderate PGD; Grade 3: Indicates severe PGD
+# can be used for q2 for sure 
+# encode it as a factor 
 filter70_data <- filter70_data %>%
-  select(-c(ICU.Admit.Date.Time, ICU.Discharge.Date.Time.1))
+  mutate(PGD.at.72hrs..Grade.0.3. = as.factor(PGD.at.72hrs..Grade.0.3.))
 
-# would be interesting to see the death date after the icu discharge date/time though but death date has 83% missingness
-
-
-
+##### Lung measures: not sure what do about them
+# Lung1_Clot.Time 69.27, Lung1_A10.EXTEM 69.27, Lung1_Max.Lysis....69.27
 
 
-missing
+##### Let's check for negative values across the dataset
+# Check for negative values in each column
+negative_counts <- sapply(filter70_data, function(x) sum(x < 0, na.rm = TRUE))
+
+# Display columns with negative values
+negative_counts[negative_counts > 0]
+
+####### PostImmediate_PTT, PostImmediate_Fibrinogen, PostDay1_PTT have negative values which are not clinically meaningful 
+# lets make these negative values as NA 
+filter70_data <- filter70_data %>%
+  mutate(
+    PostImmediate_PTT = ifelse(PostImmediate_PTT < 0, NA, PostImmediate_PTT),
+    PostImmediate_Fibrinogen = ifelse(PostImmediate_Fibrinogen < 0, NA, PostImmediate_Fibrinogen),
+    PostDay1_PTT = ifelse(PostDay1_PTT < 0, NA, PostDay1_PTT)
+  )
+
+
+## now PostImmediate_Fibrinogen has 77.6% missingness so lets remove it 
+filter70_data <- filter70_data %>%
+  select(-PostImmediate_Fibrinogen)
+
+glimpse(filter70_data)
+#### WE HAVE 83 variables now
+
+############################################################################
+
 # run the mice code to get the default methods to later store it as default 
 default_method <- mice(filter70_data, maxit=0)
 
