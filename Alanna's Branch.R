@@ -35,8 +35,8 @@ basic_eda <- function(data)
 basic_eda(data)
 
 # CLEANING THE DATA
-# First removing columns with over 70% missing data 
-threshold <- 70  # threshold for missing values
+# First removing columns with over 30% missing data 
+threshold <- 30  # threshold for missing values
 data <- data[, which(colMeans(!is.na(data)) > (threshold / 100))]
 vis_miss(data)
 
