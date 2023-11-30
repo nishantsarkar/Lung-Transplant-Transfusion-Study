@@ -38,11 +38,6 @@ results_na <- lapply(data[,1:117], table) # not ideal because we have many colum
 library(naniar)
 missing_data <- vis_miss(data) # 24.7% missingness in all the dataset
 
-# if large enough dataset with multiple variables, consider multiple imputation if the missingness is random (MCAR OR MAR). 
-# however, if certain variables have a very high percentage of missing data, consider excluding them from your analysis or use domain knowledge to impute them more accurately.
-# additionally, if predictor is irrevelant to begin with and you won't need it in your analysis, you can exclude it
-
-
 ################### 1ST Q ASKS: What are the characteristics of patients that require transfusions, and what are the factors influencing the need and amount of transfusions?
 ### Need to consider variables that describe patient characteristics and factors that might influence the need for a transfusion
 ### Relevent sections include: 
@@ -52,7 +47,6 @@ missing_data <- vis_miss(data) # 24.7% missingness in all the dataset
 
 
 ################# 2nd Q ASKS: What is the impact of transfusion on patient outcomes, including mortality?
-
 ## Need to analyze the relationship between transfusion data and patient outcomes, so we need:
 # Yellow (Blood Product Transfusion Data)
 # Blue (Survival and ICU LOS Data): Variables related to patient survival (like mortality rates at different time points post-transplant) and the length of stay in the ICU..
@@ -65,21 +59,19 @@ missing_before_filter
 
 # for time-dependent variables, such as date of icu dishcagre or duration, missinginess  might be informative in itself and needs careful consideration
 
-# Let's eliminate columns with 70% or more missinginess
-# Identify these columns with less than 70% missingness
-columns_to_keep <- names(which(missing_before_filter < 70))
+# Let's eliminate columns with 30% or more missinginess
+# Identify these columns with less than 30% missingness
+columns_to_keep <- names(which(missing_before_filter < 30))
 
 # Selecting these columns from the original dataset and this will also remove the columns 112 to 115 that have no values
 filter70_data <- data %>% 
   select(all_of(columns_to_keep))
   
-# now we have 90 variables (out of 117)
+# now we have 80 variables (out of 117)
 
-vis_miss(filter70_data) # now we have 6.8% missingness instead of 24.7%
+vis_miss(filter70_data) # now we have 0.8% missingness instead of 24.7%
 missing_after <- as.data.frame(sapply(filter70_data, function(x) sum(is.na(x)) / length(x) * 100))
 colnames(missing_after) <- "Percent_Missing" # double check to see missigness percentage in every variable
-# some are on the verge of 70% 
-# Lung1_Clot.Time  69.27, Lung1_A10.EXTEM 69.27, and Lung1_Max.Lysis 69.27
 
 
 # lets try and do MI on the others 
@@ -103,11 +95,7 @@ glimpse(filter70_data)
 # Protamine..Y.1.N.0. ecnoded as dbl but should be factor and it should take values of 0s and 1s where 0 means it was NOT administered vs 1 meaning opposite
 # however, 3 values are 25, 150, and 400 so lets let's change these values to NA 
 table(filter70_data$Protamine..Y.1.N.0.) 
-
 # and encode protamine as factor
-
-table(filter70_data$Protamine..Y.1.N.0.) # double check to see if 25, 150, and 400 are removed 
-levels(filter70_data$Protamine..Y.1.N.0.) # douuble check to see if its a factor
 
 # Intra_Albumin.5...mL. is chr but should be dbl (not factor)
 table(filter70_data$Intra_Albumin.5...mL.)
@@ -116,26 +104,19 @@ table(filter70_data$Intra_Albumin.5...mL.)
 # Date.of.Extubation column was processed weirdly when loaded into R (not proceessed as the other date and time as the other date/time variable)
 filter70_data$Date.of.Extubation <- as.POSIXct(as.numeric(filter70_data$Date.of.Extubation) * (60*60*24),
                                                origin="1899-12-30", tz="UTC")
-
+glimpse(filter70_data)
 #Massive transfusion is dbl but represented as 0s and 1s, so its a binary indicator
 
 #### Ensure dates are in dttm 
 # OR Date, ICU Admission Date/Time, ICU Discharge Date/Time, Date of Extubation, ICU Admit Date-Time, ICU Discharge Date-Time, Extubation Date
 
 ######### Now, lets incorporate all these changes: 
-
-library(dplyr)
-
 filter70_data <- filter70_data %>%
   # Convert all character variables to factors, except for Intra_Albumin.5...mL.
   mutate_if(~ is.character(.) && !identical(colnames(.), "Intra_Albumin.5...mL."), as.factor) %>%
   
   # Convert Intraoperative.ECLS to factor
   mutate(Intraoperative.ECLS = as.factor(Intraoperative.ECLS)) %>%
-  
-  # Convert Protamine..Y.1.N.0. to factor after handling specific cases
-  mutate(Protamine..Y.1.N.0. = ifelse(Protamine..Y.1.N.0. %in% c(25, 150, 400), NA, Protamine..Y.1.N.0.),
-         Protamine..Y.1.N.0. = as.factor(Protamine..Y.1.N.0.)) %>%
   
   # Handle the odd value in Intra_Albumin.5...mL. and convert to numeric
   mutate(Intra_Albumin.5...mL. = ifelse(Intra_Albumin.5...mL. == "0+AQ7", "0", Intra_Albumin.5...mL.),
@@ -201,9 +182,6 @@ filterDCD_data <- filter70_data %>%
 # time it takes for a clot to form in a blood sample
 # imp as could influence need of transfusion
 
-####### Protamine..Y.1.N.0. 41.6% missingness
-# used to counteract the anticoagulant effect of heparin aka given when we have risk of bleeding
-
 ####### Blood.Loss 1.042 % missing 
 table(filter70_data$Blood.Loss) # looks good in terms of legit values and its a necessary predictor
 # same for urine output and fluid balance
@@ -236,25 +214,16 @@ comparison_data <- filter70_data %>%
     ICU.Discharge.Date.Time,
     ICU.Discharge.Date.Time.1,
     Duration.of.ICU.Stay..days.,
-    Duration.of.ICU.stay..days.,
-    Date.of.Extubation,
-    Extubation.Date,
-    Duration.of.Ventilation,
-    Duration.of.Mechanical.Ventilation..days.) 
+    Duration.of.ICU.stay..days.) 
 # let's remove the latter ones as they have more missingess compared to the former ones
 
 filter70_data <- filter70_data %>%
   select(
     -ICU.Admit.Date.Time,
     -ICU.Discharge.Date.Time.1,
-    -Duration.of.ICU.stay..days.,
-    -Extubation.Date,
-    -Duration.of.Mechanical.Ventilation..days.
-  )
+    -Duration.of.ICU.stay..days.)
 
-
-###### Duration of ventilation 30.2% 
-table(filter70_data$Duration.of.Ventilation) # looks fine
+glimpse(filter70_data) # 77 variables for now
 
 #####PostImmediate_PTT 1.042%, PostImmediate_Fibrinogen 65.63%, PostImmediate_Creatinine 1.56%
 # these can be used to assess patient need for transfusion 
@@ -275,19 +244,6 @@ table(filter70_data$RBC.0.24hrs) # looks good in terms of not having abnormal va
 filter70_data <- filter70_data %>%
   select(-RBC.0.24hrs)
 
-######### PGD.at.72hrs..Grade.0.3. 50%
-# Primary Graft Dysfunction" assessed at 72 hours post-transplant, graded on a scale from 0 to 3.
-# a form of acute lung injury that occurs within the first 72 hours after lung transplantation.
-# Grade 0: Indicates no PGD or normal lung function; Grade 1: Suggests mild PGD; Grade 2: Represents moderate PGD; Grade 3: Indicates severe PGD
-# can be used for q2 for sure 
-# encode it as a factor 
-filter70_data <- filter70_data %>%
-  mutate(PGD.at.72hrs..Grade.0.3. = as.factor(PGD.at.72hrs..Grade.0.3.))
-
-##### Lung measures: not sure what do about them
-# Lung1_Clot.Time 69.27, Lung1_A10.EXTEM 69.27, Lung1_Max.Lysis....69.27
-
-
 ##### Let's check for negative values across the dataset
 # Check for negative values in each column
 negative_counts <- sapply(filter70_data, function(x) sum(x < 0, na.rm = TRUE))
@@ -295,22 +251,18 @@ negative_counts <- sapply(filter70_data, function(x) sum(x < 0, na.rm = TRUE))
 # Display columns with negative values
 negative_counts[negative_counts > 0]
 
-####### PostImmediate_PTT, PostImmediate_Fibrinogen, PostDay1_PTT have negative values which are not clinically meaningful 
+####### PostImmediate_PTT,PostDay1_PTT have negative values which are not clinically meaningful 
 # lets make these negative values as NA 
 filter70_data <- filter70_data %>%
   mutate(
     PostImmediate_PTT = ifelse(PostImmediate_PTT < 0, NA, PostImmediate_PTT),
-    PostImmediate_Fibrinogen = ifelse(PostImmediate_Fibrinogen < 0, NA, PostImmediate_Fibrinogen),
     PostDay1_PTT = ifelse(PostDay1_PTT < 0, NA, PostDay1_PTT)
   )
 
-
-## now PostImmediate_Fibrinogen has 77.6% missingness so lets remove it 
-filter70_data <- filter70_data %>%
-  select(-PostImmediate_Fibrinogen)
-
 glimpse(filter70_data)
-#### WE HAVE 83 variables now
+
+colnames(filter70_data)
+
 
 ############################################################################
 
