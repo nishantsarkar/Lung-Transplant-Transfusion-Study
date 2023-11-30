@@ -144,7 +144,6 @@ glimpse(filter70_data)
 #low_variance <- names(variances[variances < some_threshold])  # Set some_threshold appropriately
 
 
-
 # Let's analyze each variable with missing values so MI runs properly 
 
 ###### 1) DCD.vs.DBD which has 7.27% missingness
@@ -259,28 +258,6 @@ colnames(filter70_data)
 
 ############################################################################
 
-# run the mice code to get the default methods to later store it as default 
-default_method <- mice(filter70_data, maxit=0)
 
-# Store the default imputation methods selected by mice in the 'methods' variable
-methods <- default_method$method  
-
-# Identify which variables are factors with more than two levels:
-# 'sapply' applies the given function to each column of 'filter70_data'.
-# 'is.factor(x)' checks if a column is a factor (categorical variable).
-# 'nlevels(x) > 2' checks if the factor has more than two levels (categories).
-# The result is a logical vector where TRUE indicates a multilevel factor.
-multilevel_factors <- sapply(filter70_data, function(x) is.factor(x) && nlevels(x) > 2)
-
-# Update the imputation methods for multilevel factors to 'polyreg':
-# 'methods[multilevel_factors]' selects the imputation methods for multilevel factors.
-# Assigning 'polyreg' to these methods ensures appropriate imputation for these variables.
-methods[multilevel_factors] <- "polyreg" 
-
-# Perform multiple imputation
-imputed_data <- mice(filter70_data, method=methods, m=5, maxit=5)
-
-# Completing the data with the imputed values
-completed_data <- complete(imputed_data, 1) # Choosing the first imputed dataset as an example
 
 
