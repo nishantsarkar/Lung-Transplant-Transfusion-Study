@@ -597,45 +597,40 @@ basic_eda(Pre_df)
 
 
 
-# STABILITY SELECTION TEST - NISHANT
+# BOOTSTRAPPED LASSO TEST - NISHANT
 library(glmnet)
-library(stabs)
 
-# Converting categorical variables to dummy variables using a model matrix
-x <- model.matrix(Total.24hr.RBC ~. , Pre_df)[,-1]
-dim(x)
-class(x) 
-head(x) # Looks OK
+# Creating subset of pre-data to be used as predictors in this section.
+# Pre_df2 <- Pre_df %>% (....fill this in later....)
+# Data frame without Massive Transfusion for regression part
+# Data frame without 24hr RBC for Classification part
 
-# Creating a vector with the response values
-y <- Pre_df$Total.24hr.RBC
-
-# Stability selection
-stab.glmnet <- stabsel(x = x, y = y, fitfun = glmnet.lasso, cutoff = 0.75, PFER = 1)
-plot(stab.glmnet)
-# This was very quick so I'm a bit sussed out. Trying a different package.
-
-################# Not sure if this is the most helpful output
-library(HDCI)
-stab.bootLasso <- bootLasso(x, y, B = 2000, type.boot = "residual", alpha = 0.05, cv.method = "cv", nfolds = 5, )
-stab.bootLasso$lambda.opt
+set.seed(123) # For reproducibility; Please ensure this is ran with the rest of the code
 
 
-############## Ok fuck it let's try doing this without packages
+###################################################################
+# FINDING PREDICTORS FOR AMOUNT OF RBCs TRANSFUSED DURING SURGERY #
+###################################################################
 
-set.seed(124) # For reproducibility
-
+# Setting the total number of bootstraps (repeats) that will be done. 
 num_bootstraps <- 1000
+# Initializing a list to contain all the variables in the 'optimal' regression models. 
 selected_variables <- list()
 
+# Creating a model matrix with the feature values, for the response variable denoting RBCs received at 24 hours. The first column is excluded since it corresponds to the intercept.
+x <- model.matrix(Total.24hr.RBC ~. , Pre_df)[,-1]
+# Creating a vector with response values
+y <- Pre_df$Total.24hr.RBC
+
+# Main loop to bootstrap Lasso regression and store optimal predictors for each iteration.
 for(i in 1:num_bootstraps) {
   # Bootstrap sample
   boot_indices <- sample(1:nrow(Pre_df), replace = TRUE)
   boot_x <- x[boot_indices,]
   boot_y <- y[boot_indices]
   
-  # Lasso regression
-  cv.lasso <- cv.glmnet(boot_x, boot_y, alpha = 1)
+  # Lasso regression. cv.glmnet scales input by default.
+  cv.lasso <- cv.glmnet(boot_x, boot_y, alpha = 1, family="gaussian")
   optimal_lambda <- cv.lasso$lambda.min
   
   # Extracting coefficients at the optimal lambda
@@ -651,14 +646,83 @@ for(i in 1:num_bootstraps) {
 all_selected_vars <- unlist(selected_variables)
 variable_selection_freq <- table(all_selected_vars) / num_bootstraps
 
-# Convert the table to a dataframe for easier handling
+# Convert the table to a dataframe for easier handling, and sorting by frequency
 variable_selection_df <- as.data.frame(variable_selection_freq)
-
-# Renaming columns for clarity
 names(variable_selection_df) <- c("Variable", "Frequency")
+variable_selection_df <- variable_selection_df[order(-variable_selection_df$Frequency),]
 
 # Finding variables with frequency greater than 75%
 selected_predictors <- subset(variable_selection_df, Frequency > 0.75)
-
-# Displaying the results
 print(selected_predictors)
+
+
+# INSERT FREQUENCY PLOT HERE
+
+# INSERT LINEAR REGRESSION SECTION HERE - WILL DO ONCE WE COMBINE THE CODE
+
+
+
+####################################################
+# FINDING PREDICTORS FOR MASSIVE BLOOD TRANSFUSION #
+####################################################
+
+# Initializing a list to contain all the variables in the 'optimal' classification models. 
+class_selected_variables <- list()
+
+# Creating a model matrix with the feature values, for the response variable Massive Transfusion
+x2 <- model.matrix(Massive.Transfusion ~. , Pre_df)[,-1]
+# Creating a vector with response values
+y2 <- Pre_df$Massive.Transfusion
+
+# Main loop to bootstrap Lasso classifier and store optimal predictors for each iteration.
+set.seed(123)
+for(i in 1:num_bootstraps) {
+  # Separate the data into two groups based on the value of 'Massive.Transfusion'.
+  # This helps in stratified sampling to address class imbalance.
+  indices_0 <- which(y2 == 0)
+  indices_1 <- which(y2 == 1)
+  
+  # Sample separately from each group to ensure representation of both classes in each sample.
+  # For the majority class (0), we sample the usual number minus the count of minority class.
+  sample_0 <- sample(indices_0, size = nrow(Pre_df) - 9, replace = TRUE)
+  # For the minority class (Massive Transfusions), we always sample 9 instances to ensure their presence.
+  # (as there are 9 instances in the original dataset)
+  sample_1 <- sample(indices_1, size = 9, replace = TRUE)
+  
+  # Combine the samples and creating an overall bootstrap sample
+  boot_indices <- c(sample_0, sample_1)
+  boot_x2 <- x2[boot_indices,]
+  boot_y2 <- y2[boot_indices]
+
+  # Lasso Classification: 
+  # Fitting a Lasso model on the bootstrap sample. cv.glmnet automatically scales the input.
+  cv.lasso2 <- cv.glmnet(boot_x2, boot_y2, alpha = 1, family="binomial")
+  optimal_lambda2 <- cv.lasso2$lambda.min
+  
+  # Extracting coefficients at the optimal lambda
+  # Coefficients not equal to zero indicate selected variables
+  lasso_coefs2 <- coef(cv.lasso2, s = optimal_lambda2)
+  non_zero_coefs2 <- lasso_coefs2[lasso_coefs2[, 1] != 0, , drop = FALSE]
+  selected_vars_names2 <- row.names(non_zero_coefs2)[-1] # Excluding intercept
+  
+  # Storing names of selected variables
+  class_selected_variables[[i]] <- selected_vars_names2
+}
+
+# Analyzing the frequency of selection for each variable
+class_selected_vars_final <- unlist(class_selected_variables)
+class_selection_freq <- table(class_selected_vars_final) / num_bootstraps
+
+# Convert the table to a dataframe for easier handling, and sorting by frequency
+class_selection_df <- as.data.frame(class_selection_freq)
+names(class_selection_df) <- c("Variable", "Frequency")
+class_selection_df <- class_selection_df[order(-class_selection_df$Frequency),]
+
+# Finding variables with frequency greater than 75%
+class_final_predictors <- subset(class_selection_df, Frequency > 0.75)
+print(class_final_predictors)
+
+
+# INSERT FREQUENCY PLOT HERE
+
+# INSERT LINEAR REGRESSION SECTION HERE - WILL DO ONCE WE COMBINE THE CODE
