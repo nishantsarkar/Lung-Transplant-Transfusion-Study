@@ -445,3 +445,27 @@ ggplot(Merged_Frame, aes(x = factor(Massive.Transfusion), y = Pre_Hb)) +
   geom_boxplot() +
   ggtitle("Pre_Hb Levels by Massive Transfusion Requirement")
 
+# Analyzing the relationship between preoperative hemoglobin (Pre_Hb) levels and the total 24-hour red blood cell (RBC) transfusion amount (Total.24hr.RBC)
+ggplot(Merged_Frame, aes(x = Pre_Hb, y = Total.24hr.RBC)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "blue") + # Adds a linear regression line
+  ggtitle("Preoperative Hemoglobin vs. Total 24hr RBC Transfused") +
+  xlab("Preoperative Hemoglobin (g/dL)") +
+  ylab("Total 24hr RBC Transfused (units)")
+
+# Scatter Plot for Pre_INR vs. Total 24-hour RBC
+ggplot(Merged_Frame, aes(x = Pre_INR, y = Total.24hr.RBC)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "blue") +
+  ggtitle("Preoperative INR vs. Total 24hr RBC Transfused") +
+  xlab("Preoperative INR") +
+  ylab("Total 24hr RBC Transfused (units)")
+
+# Bar Plot for ECLS_ECMO vs. Total 24-hour RBC
+ggplot(Merged_Frame, aes(x = ECLS_ECMO, y = Total.24hr.RBC)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "cyan") +
+  ggtitle("Average Total 24hr RBC Transfused by ECLS_ECMO Status") +
+  xlab("ECLS_ECMO Status") +
+  ylab("Average Total 24hr RBC Transfused (units)")
+
+
