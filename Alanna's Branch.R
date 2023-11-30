@@ -259,7 +259,7 @@ colnames(filter70_data)
 # Creation of new data frame with selected variables based on literature review
 # First data frame contains "Pre" variables to answer first question
 View(filter70_data)
-Pre_df <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", "Pre_Hb","Pre_Hct", "Pre_Platelets", "Pre_INR", "ECLS_ECMO", "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", "Blood.Loss", "Massive.Transfusion" )]
+Pre_df <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", "Pre_Hb","Pre_Hct", "Pre_Platelets", "Pre_INR", "ECLS_ECMO", "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", "Blood.Loss", "Massive.Transfusion", "Total.24hr.RBC" )]
 View(Pre_df)
 # Second data frame contains "Post" variables to answer the second question
 Post_df <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", "Duration.of.ICU.Stay..days.","ALIVE_30DAYS_YN", "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN", "PostDay1_Hb", "PostDay1_Hct", "PostDay1_Platelets", "PostDay1_INR", "Total.24hr.RBC", "ECLS_ECMO", "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", "Blood.Loss", "Massive.Transfusion")]
@@ -294,3 +294,371 @@ basic_eda <- function(Pre_df)
 }
 
 basic_eda(Pre_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# STABILITY SELECTION TEST - NISHANT
+library(glmnet)
+library(stabs)
+
+# Converting categorical variables to dummy variables using a model matrix
+x <- model.matrix(Total.24hr.RBC ~. , Pre_df)[,-1]
+dim(x)
+class(x) 
+head(x) # Looks OK
+
+# Creating a vector with the response values
+y <- Pre_df$Total.24hr.RBC
+
+# Stability selection
+stab.glmnet <- stabsel(x = x, y = y, fitfun = glmnet.lasso, cutoff = 0.75, PFER = 1)
+plot(stab.glmnet)
+# This was very quick so I'm a bit sussed out. Trying a different package.
+
+################# Not sure if this is the most helpful output
+library(HDCI)
+stab.bootLasso <- bootLasso(x, y, B = 2000, type.boot = "residual", alpha = 0.05, cv.method = "cv", nfolds = 5, )
+stab.bootLasso$lambda.opt
+
+
+############## Ok fuck it let's try doing this without packages
+
+set.seed(124) # For reproducibility
+
+num_bootstraps <- 1000
+selected_variables <- list()
+
+for(i in 1:num_bootstraps) {
+  # Bootstrap sample
+  boot_indices <- sample(1:nrow(Pre_df), replace = TRUE)
+  boot_x <- x[boot_indices,]
+  boot_y <- y[boot_indices]
+  
+  # Lasso regression
+  cv.lasso <- cv.glmnet(boot_x, boot_y, alpha = 1)
+  optimal_lambda <- cv.lasso$lambda.min
+  
+  # Extracting coefficients at the optimal lambda
+  lasso_coefs <- coef(cv.lasso, s = optimal_lambda)
+  non_zero_coefs <- lasso_coefs[lasso_coefs[, 1] != 0, , drop = FALSE]
+  selected_vars_names <- row.names(non_zero_coefs)[-1] # Excluding intercept
+  
+  # Storing names of selected variables
+  selected_variables[[i]] <- selected_vars_names
+}
+
+# Analyzing the frequency of selection for each variable
+all_selected_vars <- unlist(selected_variables)
+variable_selection_freq <- table(all_selected_vars) / num_bootstraps
+
+# Convert the table to a dataframe for easier handling
+variable_selection_df <- as.data.frame(variable_selection_freq)
+
+# Renaming columns for clarity
+names(variable_selection_df) <- c("Variable", "Frequency")
+
+# Finding variables with frequency greater than 75%
+selected_predictors <- subset(variable_selection_df, Frequency > 0.75)
+
+# Displaying the results
+print(selected_predictors)
