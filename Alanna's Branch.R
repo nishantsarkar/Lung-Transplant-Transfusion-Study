@@ -11,6 +11,7 @@ library(funModeling)
 library(mice)
 library(survival)
 library(car)
+library(funModeling)
 
 # Loading the data set 
 data <- read_excel("transfusion data.xlsx")
@@ -300,7 +301,6 @@ vif_results_1.2 <- vif(model_1.2)
 # Displaying VIF results
 print(vif_results_1.2)
 # When removing Pre_Hct, no more collinearity is present
-Pre_df <- Pre_df_1
 
 # Fitting a linear model with 'Blood.Loss' as the dependent variable
 model_2 <- lm(Blood.Loss ~ ., data=Post_df)
@@ -318,18 +318,38 @@ vif_results_2.1 <- vif(model_2.1)
 # Displaying VIF results
 print(vif_results_2.1)
 # No more collinearity when removing Intra.Packed.Cells and Massive.Transfusion
-Post_df <- Post_df_1
 
 # Question 1
 # Performing EDA
-basic_eda <- function(Pre_df)
+# Creating data frame for continuous and categorical variables
+Merged_Frame <- merge(Pre_df, Post_df)
+View(Merged_Frame)
+
+Continuous_Variables <- Merged_Frame [c("Age", "BMI", "Pre_Hb","Pre_Hct", "Pre_Platelets", "Pre_INR", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", "Blood.Loss", "Duration.of.ICU.Stay..days.", "PostDay1_Hb", "PostDay1_Hct", "PostDay1_Platelets", "PostDay1_INR", "Total.24hr.RBC")]
+Categorical_Variables <- Merged_Frame [c("Type", "Gender..male.", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", "ECLS_ECMO", "ECLS_CPB", "Massive.Transfusion", "ALIVE_30DAYS_YN", "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN")]
+
+# Using funmodeling for Continuous Variables 
+basic_eda <- function(Continuous_Variables)
 {
-  glimpse(Pre_df) # Gives information on the data such as number of rows, columns, values in the data frame, and type of data
-  print(status(Pre_df)) # Generates a table with information on the data such as number of zeros and NAs
-  freq(Pre_df)
-  print(profiling_num(Pre_df)) # Generates a table with information on mean, std_dev, variance, skewness of the distribution, kurotsis, IQR, range_98, and range_80  
-  plot_num(Pre_df) # Generates plots for each variable and its data
-  describe(Pre_df) # Generates an extensive summary that includes count, mean, standard deviation, minimum, maximum, and various percentiles for each numeric variable
+  glimpse(Continuous_Variables) # Gives information on the data such as number of rows, columns, values in the data frame, and type of data
+  print(status(Continuous_Variables)) # Generates a table with information on the data such as number of zeros and NAs
+  freq(Continuous_Variables)
+  print(profiling_num(Continuous_Variables)) # Generates a table with information on mean, std_dev, variance, skewness of the distribution, kurotsis, IQR, range_98, and range_80  
+  plot_num(Continuous_Variables) # Generates plots for each variable and its data
+  describe(Continuous_Variables) # Generates an extensive summary that includes count, mean, standard deviation, minimum, maximum, and various percentiles for each numeric variable
 }
 
-basic_eda(Pre_df)
+basic_eda(Continuous_Variables)
+
+# Using funmodeling for Categorical variables 
+basic_eda <- function(Categorical_Variables)
+{
+  glimpse(Categorical_Variables) # Gives information on the data such as number of rows, columns, values in the data frame, and type of data
+  print(status(Categorical_Variables)) # Generates a table with information on the data such as number of zeros and NAs
+  freq(Categorical_Variables)
+  print(profiling_num(Categorical_Variables)) # Generates a table with information on mean, std_dev, variance, skewness of the distribution, kurotsis, IQR, range_98, and range_80  
+  plot_num(Categorical_Variables) # Generates plots for each variable and its data
+  describe(Categorical_Variables) # Generates an extensive summary that includes count, mean, standard deviation, minimum, maximum, and various percentiles for each numeric variable
+}
+
+basic_eda(Categorical_Variables)
