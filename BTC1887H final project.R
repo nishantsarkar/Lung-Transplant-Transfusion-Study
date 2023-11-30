@@ -154,13 +154,6 @@ table(filter70_data$DCD.vs.DBD)
 # DCD: Donation after cardiac death involves donation of organs after irreversible cessation of circulatory and respiratory function
 # NDD: Neurological Determination of Death or brain death basically 
 # FALSE: ??? (2 observations has FALSE)
-## i scanned through the literature quick to see if donor status affected patient outcomes but few to none really discuss any relationship between the two
-## .. Most focus on grafts and kidney organs too
-## Evidence1: For kidney transplants, it's observed that mid and long-term outcomes for DCD grafts are equivalent to DBD kidneys. While short-term outcomes
-# ..may be poorer for DCD grafts, the impact of delayed graft function on DCD graft survival is less significant, suggesting good recovery potential (Siddiqi. H 2023)
-## Evidence2: observational study comparing DCD vs DBD 
-# ..results may lack accuracy & validity but say no difference in organ quality just different means in presevring the organ (Elmer A. 2022)
-######## I recommend we remove it for now but we can do available case analysis for it at the end to see if it impacts patient survival-related outcomes or we can use logreg to impute
 
 # Let's change the 2 FALSE encoded values to NA so it is easier to perform any sort of analysis on this predictor if we want to use it later no
 filter70_data <- filter70_data %>% 
