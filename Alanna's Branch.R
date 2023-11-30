@@ -367,3 +367,81 @@ basic_eda <- function(Categorical_Variables)
 }
 
 basic_eda(Categorical_Variables)
+
+# Creating H
+# Creating histograms for continuous variables
+for (var in names(Continuous_Variables)) {
+  p <- ggplot(Continuous_Variables, aes_string(x = var)) + 
+    geom_histogram(bins = 30, fill = "pink", color = "black") +
+    theme_minimal() +
+    ggtitle(paste("Histogram of", var))
+  print(p)
+}
+
+# Creating bar plots for categorical variables
+for (var in names(Categorical_Variables)) {
+  p <- ggplot(Categorical_Variables, aes_string(x = var)) + 
+    geom_bar(fill = "purple", color = "black") +
+    theme_minimal() +
+    ggtitle(paste("Bar Plot of", var))
+  print(p)
+}
+
+
+# Answering: What are the characteristics of patients that require transfusions?
+# Histogram showing amount of transfusion at 24hrs per patient 
+ggplot(Merged_Frame, aes(x = Total.24hr.RBC)) +
+  geom_histogram(bins = 30, fill = "blue", color = "black") +
+  geom_vline(xintercept = 10, color = "red", linetype = "dashed") +
+  ggtitle("Histogram of Total RBC Units Transfused")
+# Dashed line shows threshold of Massive Transfusion
+
+# Showing blood transfusion per gender
+ggplot(Merged_Frame, aes(x = Gender..male., y = Total.24hr.RBC)) +
+  geom_boxplot() +
+  ggtitle("Box Plot of Total RBC Units by Gender")
+
+# Showing blood transfusion per age 
+ggplot(Merged_Frame, aes(x = Age, y = Total.24hr.RBC)) +
+  geom_point() +
+  ggtitle("Age vs. Total RBC Units Transfused")
+
+# Showing bar chart for massive transfusion
+ggplot(Merged_Frame, aes(x = Massive.Transfusion)) +
+  geom_bar(fill = "orange") +
+  ggtitle("Bar Chart of Massive Transfusions")
+
+
+# Doing a correlation heat map to demonstrate correlation between variables 
+library(corrplot)
+continuous_data <- Merged_Frame[, sapply(Merged_Frame, is.numeric)]
+corr_matrix <- cor(continuous_data)
+corrplot(corr_matrix, method = "color")
+
+# Heat map for categorical variables 
+library(reshape2)
+categorical_data <- Merged_Frame[, sapply(Merged_Frame, is.factor)]
+heatmap_data <- as.matrix(cor(sapply(categorical_data, as.numeric)))
+heatmap(heatmap_data)
+
+# Box Plot of Total RBC Units by Transplant Type 
+ggplot(Merged_Frame, aes(x = Transplant_Type, y = Total.24hr.RBC)) +
+  geom_boxplot() +
+  ggtitle("Total RBC Units by Transplant Type")
+
+# Violin Plot of BMI vs. Total RBC Units
+ggplot(Merged_Frame, aes(x = factor(BMI), y = Total.24hr.RBC)) +
+  geom_violin(trim = FALSE, fill = "lightblue") +
+  ggtitle("Violin Plot of BMI vs. Total RBC Units Transfused")
+
+
+# Bar Plot of average bar plot of blood loss by transfusion type
+ggplot(Merged_Frame, aes(x = Transplant_Type, y = Blood.Loss)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "purple") +
+  ggtitle("Average Blood Loss by Transplant Type")
+
+# Boxplot for Pre_Hb levels by Massive Transfusion 
+ggplot(Merged_Frame, aes(x = factor(Massive.Transfusion), y = Pre_Hb)) +
+  geom_boxplot() +
+  ggtitle("Pre_Hb Levels by Massive Transfusion Requirement")
+
