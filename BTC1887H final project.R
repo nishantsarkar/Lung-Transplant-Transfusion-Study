@@ -7,6 +7,7 @@ library(ggplot2)
 library(dplyr)
 library(funModeling)
 library(survival)
+library(car)
 
 # Loading the data set 
 data <- read_excel("transfusion data.xlsx")
@@ -228,14 +229,6 @@ table(filter70_data$Pre_Creatinine)
 ## In PostDay1_PTT, we have one negative value
 ## can be used in patient need for transfusion
 
-######## RBC.0.24hrs 68.75%
-table(filter70_data$RBC.0.24hrs) # looks good in terms of not having abnormal values 
-# however, RBC 24-48hrs	RBC 48-72hrs had more than 70% missingness so they were reomved
-# we only have 0-24 and 72 hour total as of now. 
-# since there's a lot of missingness in 0-24hrs, we can decide to select only the RBC count at the  72hr total timeframe. 
-filter70_data <- filter70_data %>%
-  select(-RBC.0.24hrs)
-
 ##### Let's check for negative values across the dataset
 # Check for negative values in each column
 negative_counts <- sapply(filter70_data, function(x) sum(x < 0, na.rm = TRUE))
@@ -258,6 +251,110 @@ colnames(filter70_data)
 
 ############################################################################
 
+######ALANNA###########
+# Creation of new data frame with selected variables based on literature review
+# First data frame contains "Pre" variables to answer first question
+View(filter70_data)
+Pre_df <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", "Pre_Hb","Pre_Hct", "Pre_Platelets", "Pre_INR", "ECLS_ECMO", "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", "Blood.Loss", "Massive.Transfusion" )]
+View(Pre_df)
+# Second data frame contains "Post" variables to answer the second question
+Post_df <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "First.Lung.Transplant", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", "Duration.of.ICU.Stay..days.","ALIVE_30DAYS_YN", "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN", "PostDay1_Hb", "PostDay1_Hct", "PostDay1_Platelets", "PostDay1_INR", "Total.24hr.RBC", "ECLS_ECMO", "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", "Blood.Loss", "Massive.Transfusion")]
+View(Post_df)
 
 
+#  combine the 'First Lung Transplant' and 'Redo Lung Transplant' variables into a single variable with two levels: 'FIRST' and 'SECOND'.
+Post_df <- Post_df %>% 
+  mutate(Transplant_Type = ifelse(Redo.Lung.Transplant == TRUE, "SECOND", "FIRST")) %>%
+  select(-First.Lung.Transplant, -Redo.Lung.Transplant)
+
+
+# now do the same for Alive in 30, 90, 12 months variable 
+Post_df <- Post_df %>%
+  mutate(Minimum_Alive_Days = case_when(
+    ALIVE_12MTHS_YN == "Y" ~ 365,
+    ALIVE_90DAYS_YN == "Y" ~ 90,
+    ALIVE_30DAYS_YN == "Y" ~ 30,
+    TRUE ~ 0
+  )) %>%
+  select(-ALIVE_30DAYS_YN, -ALIVE_90DAYS_YN, -ALIVE_12MTHS_YN)
+
+
+# IMPUTING THE DATA
+# Imputation for the rest of columns
+vis_miss(Pre_df) # Missing under 0.1%
+vis_miss(Post_df) # Missing under 0.1%
+
+# Performing Stochastic Imputation
+# Only doing one imputation rather than doing multiple imputations 
+Pre_df <- mice(Pre_df, m = 1, method = 'pmm', seed = 123)
+Pre_df <- complete(Pre_df, 1)
+vis_miss(Pre_df) # No more NA Values
+
+# Only doing one imputation rather than doing multiple imputations
+Post_df <- mice(Post_df, m = 1, method = 'pmm', seed = 123)
+Post_df <- complete(Post_df, 1)
+vis_miss(Post_df) # No more NA Values
+
+
+# CHECKING FOR COLLINEARITY
+# Fitting a linear model with 'Blood.Loss' as the dependent variable
+model <- lm(Blood.Loss ~ ., data=Pre_df)
+# Calculating Variance Inflation Factor (VIF)
+vif_results <- vif(model)
+# Identifying variables with high collinearity
+high_vif <- vif_results[vif_results > 5]  # You can also use 10 as a threshold
+print(high_vif)
+# Pre_Hb and Pre_Hct are highly collinear
+
+Pre_df_1 <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", "Pre_Hb", "Pre_Platelets", "Pre_INR", "ECLS_ECMO", "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", "Blood.Loss", "Massive.Transfusion" )]
+# Fitting a linear model with 'Blood.Loss' as the dependent variable
+model_1.2 <- lm(Blood.Loss ~ ., data=Pre_df_1)
+# Calculating Variance Inflation Factor (VIF)
+vif_results_1.2 <- vif(model_1.2)
+# Displaying VIF results
+print(vif_results_1.2)
+# When removing Pre_Hct, no more collinearity is present
+Pre_df <- Pre_df_1
+
+# Fitting a linear model with 'Blood.Loss' as the dependent variable
+model_2 <- lm(Blood.Loss ~ ., data=Post_df)
+# Calculating Variance Inflation Factor (VIF)
+vif_results_2 <- vif(model_2)
+# Displaying VIF results
+print(vif_results_2)
+# Total.24hr.RBC and Intra_Packed.Cells are highly collinear
+
+Post_df_1 <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", "Duration.of.ICU.Stay..days.","ALIVE_30DAYS_YN", "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN", "PostDay1_Hb", "PostDay1_Hct", "PostDay1_Platelets", "PostDay1_INR", "Total.24hr.RBC", "ECLS_ECMO", "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Blood.Loss")]
+# Fitting a linear model with 'Blood.Loss' as the dependent variable
+model_2.1 <- lm(Blood.Loss ~ ., data=Post_df_1)
+# Calculating Variance Inflation Factor (VIF)
+vif_results_2.1 <- vif(model_2.1)
+# Displaying VIF results
+print(vif_results_2.1)
+# No more collinearity when removing Intra.Packed.Cells and Massive.Transfusion
+Post_df <- Post_df_1
+
+# Question 1
+# Performing EDA
+basic_eda <- function(Pre_df)
+{
+  glimpse(Pre_df) # Gives information on the data such as number of rows, columns, values in the data frame, and type of data
+  print(status(Pre_df)) # Generates a table with information on the data such as number of zeros and NAs
+  freq(Pre_df)
+  print(profiling_num(Pre_df)) # Generates a table with information on mean, std_dev, variance, skewness of the distribution, kurotsis, IQR, range_98, and range_80  
+  plot_num(Pre_df) # Generates plots for each variable and its data
+  describe(Pre_df) # Generates an extensive summary that includes count, mean, standard deviation, minimum, maximum, and various percentiles for each numeric variable
+}
+
+basic_eda(Pre_df)
+
+
+
+
+################################################
+
+### Q2)
+
+glimpse(Pre_df)
+glimpse(Post_df)
 
