@@ -270,15 +270,25 @@ Pre_df <- Pre_df %>%
 
 
 # now do the same for Alive in 30, 90, 12 months variable 
+# If a patient survived 12 months, they're assigned 365 days.
+# If a patient didn't survive 12 months but did survive 90 days, they're assigned 90 days.
+# If a patient didn't survive 90 days but did survive 30 days, they're assigned 30 days.
+# If a patient didn't survive 30 days, and none of the above conditions are met, they're assigned 0 days.
+
 Post_df <- Post_df %>%
   mutate(Minimum_Alive_Days = case_when(
     ALIVE_12MTHS_YN == "Y" ~ 365,
-    ALIVE_90DAYS_YN == "Y" ~ 90,
-    ALIVE_30DAYS_YN == "Y" ~ 30,
+    ALIVE_12MTHS_YN == "N" & ALIVE_90DAYS_YN == "Y" ~ 90,
+    ALIVE_12MTHS_YN == "N" & ALIVE_90DAYS_YN == "N" & ALIVE_30DAYS_YN == "Y" ~ 30,
+    ALIVE_30DAYS_YN == "N" ~ 0,  
     TRUE ~ 0
-  )) %>%
+  )) %>% 
   select(-ALIVE_30DAYS_YN, -ALIVE_90DAYS_YN, -ALIVE_12MTHS_YN)
 
+as.factor(Post_df$Minimum_Alive_Days)
+
+
+  
 
 # IMPUTING THE DATA
 # Imputation for the rest of columns
@@ -354,7 +364,7 @@ basic_eda(Pre_df)
 
 ################################################
 
-### Q2)
+###### Q2)
 
 glimpse(Pre_df)
 glimpse(Post_df)
