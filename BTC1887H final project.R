@@ -362,10 +362,200 @@ basic_eda(Pre_df)
 
 
 
-################################################
+#############################################################################
 
-###### Q2)
+###### Q2) SURVIVAL ANALYSISS
 
 glimpse(Pre_df)
 glimpse(Post_df)
+
+
+###### Creating time to event variables 
+## Subtract death date from icu admission date to get accurate day of being alive
+## have to make sure they have same format
+
+# Convert ICU.Admission.Date.Time to Date format
+data$ICU.Admission.Date.Time <- as.Date(data$ICU.Admission.Date.Time)
+
+# Replace empty values with NA in DEATH_DATE
+data$DEATH_DATE[data$DEATH_DATE == ""] <- NA
+
+# Convert DEATH_DATE to Date format
+data$DEATH_DATE <- as.Date(data$DEATH_DATE, format = "%d-%b-%Y")
+
+data$ICU_Discharge_Date.Time <- as.Date(data$ICU_Discharge_Date.Time)
+
+# The study period will be selected based on the intial icu admission date and the last death date 
+# it is 2018-01-05 and 2020-01-22 
+# so the study period will be the different between these 
+
+earliest_admission_date <- as.Date("2018-01-05")
+latest_death_date <- as.Date("2020-01-22")
+
+# Calculate the duration of the study period in days
+study_period_days <- as.numeric(latest_death_date - earliest_admission_date)
+
+
+# Calculate Survival Time only for deceased patients ( those who have 747 (study period) are assumed to be still be alive)
+data$Days_Alive <- ifelse(is.na(data$DEATH_DATE), 
+                          747, 
+                          as.numeric(data$DEATH_DATE - data$ICU.Admission.Date.Time))
+
+# Add this time to event variable (Days_Alive) to Post_df
+Post_df_1$Days_Alive<- data$Days_Alive 
+
+# Create a binary survival status variable
+Post_df_1$Status <- ifelse((Post_df_1$Days_Alive == 747), 0, 1) # 0 for censored, 1 for death
+
+
+# Cox proportional hazards modelbut without adjusting for confounders
+cox_model <- coxph(Surv(time = Days_Alive, event = Status) ~ Total.24hr.RBC, data = Post_df_1)
+summary(cox_model) # not significant 
+
+# Check proportional hazards assumption
+# Visually using log log survival plots
+plot(survfit(cox_model), fun='cloglog') # they look proportional and do not cross, good sign
+
+# or statistically using Schoenfeld residuals
+cox.zph(cox_model) # interpretation for that: 
+# Generally, a high p-value (typically >0.05) suggests that the proportional hazards assumption is not violated for that variable.
+#The 'GLOBAL' test provides an overall test for the assumption across all variables. A high p-value here (0.465) indicates that 
+#there's no global violation of the proportional hazards assumption in your model.
+
+
+
+
+
+# cox model but including all the relevant variables 
+cox_model_enhanced <- coxph(Surv(time = Days_Alive, event = Status) ~ 
+                              Total.24hr.RBC + Type + Gender..male. + Age + BMI +
+                              COPD + Cystic.Fibrosis + Interstitial.Lung.Disease +
+                              Pulm_Other + Coronary.Artery.Disease + Hypertension +
+                              Renal.Failure + Stroke.CVA + Liver.Disease + 
+                              ExVIVO.Lung.Perfusion + Blood.Loss, data = Post_df)
+
+
+plot(survfit(cox_model_enhanced), fun='cloglog') # looks good, proportional and no crossing.
+cox.zph(cox_model_enhanced)
+
+summary(cox_model_enhanced) #doesn't show any statistically significant predictors for the hazard of death among the variables included (p> 0.05 for all)
+
+
+########### Lets include massive transfusion & remove rbc and intracellular in a new dataset
+Post_df_MT <- Post_df %>% 
+  select(c(-Total.24hr.RBC), (Intra_Packed.Cells))
+
+
+
+# Add this time to event variable (Days_Alive) to Post_df
+Post_df_MT$Days_Alive<- data$Days_Alive 
+
+# Create a binary survival status variable
+Post_df_MT$Status <- ifelse((Post_df_1$Days_Alive == 747), 0, 1) # 0 for censored, 1 for death
+
+
+# Lets see massive transfusion  
+cox_model2 <- coxph(Surv(time = Days_Alive, event = Status) ~ Massive.Transfusion, data = Post_df_MT)
+summary(cox_model2) # not significant too p = 0.609
+plot(survfit(cox_model2), fun='cloglog')
+
+
+# Load necessary libraries
+library(survival)
+library(survminer)
+
+# Create a survival object
+surv_object <- Surv(time = Post_df$Days_Alive, event = Post_df_MT$Status)
+
+# Fit Kaplan-Meier survival curves
+km_fit <- survfit(surv_object ~ Massive.Transfusion, data = Post_df_MT)
+
+# Plot Kaplan-Meier survival curves
+ggsurvplot(km_fit, 
+           data = Post_df_MT, 
+           title = "Survival Curves by Massive Transfusion Status",
+           xlab = "Days",
+           ylab = "Survival Probability")
+
+
+
+######################### LETS USE 365 DAYS AS OUR STUDY PERIOD 
+# Calculate Time to Event of death in days and for those that have NA for death date, who we assume survived or did not experience death yet, we input 365 days for them
+data$Time_to_event <- ifelse(is.na(data$DEATH_DATE), 365, as.numeric(data$DEATH_DATE - data$ICU.Admission.Date.Time))
+
+# Add Time_to_event to Post_df
+Post_df_1$Time_to_event_year <- data$Time_to_event
+
+# Create a binary survival status variable
+# 0 for censored or death after one year, 1 for death within one year
+Post_df_1$Status_for_year <- ifelse(data$Time_to_event >= 365, 0, 1)
+
+# Cox proportional hazards model
+cox_model_year <- coxph(Surv(time = Time_to_event_year, event = Status_for_year) ~ Total.24hr.RBC, data = Post_df_1)
+summary(cox_model_year) # still no signifiant results where p = 0.6
+
+
+
+# cox model but including all the relevant variables and using 1 year study period, dataset used is including the total 24 rbcs
+cox_model_all_year <- coxph(Surv(time = Time_to_event_year, event = Status_for_year) ~ 
+                              Total.24hr.RBC + Type + Gender..male. + Age + BMI +
+                              COPD + Cystic.Fibrosis + Interstitial.Lung.Disease +
+                              Pulm_Other + Coronary.Artery.Disease + Hypertension +
+                              Renal.Failure + Stroke.CVA + Liver.Disease + 
+                              ExVIVO.Lung.Perfusion + Blood.Loss, data = Post_df_1)
+
+## WARNING MESSAGE:  Loglik converged before variable  14 ; coefficient may be infinite.
+plot(survfit(cox_model_all_year), fun='cloglog') # looks good, proportional and no crossing.
+cox.zph(cox_model_all_year)
+summary(cox_model_all_year)
+
+
+# removed variable 14 and onwards 
+cox_model_all_year <- coxph(Surv(time = Time_to_event_year, event = Status_for_year) ~ 
+                              Total.24hr.RBC + Type + Gender..male. + Age + BMI +
+                              COPD + Cystic.Fibrosis + Interstitial.Lung.Disease +
+                              Pulm_Other + Coronary.Artery.Disease + Hypertension +
+                              Renal.Failure, data = Post_df_1)
+plot(survfit(cox_model_all_year), fun='cloglog') # looks good, proportional and no crossing.
+cox.zph(cox_model_all_year) # cystic fibrosis close to violating (0.08) assumption
+summary(cox_model_all_year) 
+
+#### YAYYYYYY we have BMI as a signifncant predictor of hazard 
+# interpret: 1 unit higher BMI corresponds to 15% increase of the hazard to experience death
+# OR each unit increase in BMI, the hazard of the event occurring increases by a factor of about 1.15, holding all other variables constant.
+
+
+
+
+######### lets use the dataset that include massice transfuiion  
+
+# Add Time_to_event to Post_df
+Post_df_MT$Time_to_event_year <- data$Time_to_event
+
+# Create a binary survival status variable
+# 0 for censored or death after one year, 1 for death within one year
+Post_df_MT$Status_for_year <- ifelse(data$Time_to_event >= 365, 0, 1)
+
+# Cox proportional hazards model
+cox_model_year_transfusion <- coxph(Surv(time = Time_to_event_year, event = Status_for_year) ~ Massive.Transfusion, data = Post_df_MT)
+summary(cox_model_year_transfusion) # still no signifiant results 
+
+# Create a survival object
+surv_object2 <- Surv(time = Post_df$Time_to_event_year, event = Post_df$Status_for_year)
+
+# Fit Kaplan-Meier survival curves
+km_fit2 <- survfit(surv_object2 ~ Massive.Transfusion, data = Post_df_MT)
+
+# Plot Kaplan-Meier survival curves
+ggsurvplot(km_fit2, 
+           data = Post_df_MT, 
+           title = "Survival Curves by Massive Transfusion Status",
+           xlab = "Days",
+           ylab = "Survival Probability")
+####crosses or line on the survival curves represent  the censored data points
+### in this case here, they represent those who were still alive at the end of the one-year study period (365 days), or died after the one-year study period
+
+
+
+
 
