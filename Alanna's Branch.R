@@ -461,3 +461,10 @@ ggplot(Merged_Frame, aes(x = ECLS_ECMO, y = Total.24hr.RBC)) +
   ggtitle("Average Total 24hr RBC Transfused by ECLS_ECMO Status") +
   xlab("ECLS_ECMO Status") +
   ylab("Average Total 24hr RBC Transfused (units)")
+
+# Bar Plot for Liver Disease vs. Total 24-hour RBC
+ggplot(Merged_Frame, aes(x = Liver.Disease, y = Total.24hr.RBC)) +
+geom_bar(stat = "summary", fun = "mean", fill = "green") +
+  ggtitle("Average Total 24hr RBC Transfused by Liver Disease Status") +
+  xlab("Liver Disease Status") +
+  ylab("Average Total 24hr RBC Transfused (units)")
