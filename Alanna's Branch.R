@@ -368,7 +368,6 @@ basic_eda <- function(Categorical_Variables)
 
 basic_eda(Categorical_Variables)
 
-# Creating H
 # Creating histograms for continuous variables
 for (var in names(Continuous_Variables)) {
   p <- ggplot(Continuous_Variables, aes_string(x = var)) + 
@@ -378,6 +377,8 @@ for (var in names(Continuous_Variables)) {
   print(p)
 }
 
+# Do a bar plot for Intra_Albumin (Look to group)
+
 # Creating bar plots for categorical variables
 for (var in names(Categorical_Variables)) {
   p <- ggplot(Categorical_Variables, aes_string(x = var)) + 
@@ -386,7 +387,6 @@ for (var in names(Categorical_Variables)) {
     ggtitle(paste("Bar Plot of", var))
   print(p)
 }
-
 
 # Answering: What are the characteristics of patients that require transfusions?
 # Histogram showing amount of transfusion at 24hrs per patient 
@@ -406,11 +406,6 @@ ggplot(Merged_Frame, aes(x = Age, y = Total.24hr.RBC)) +
   geom_point() +
   ggtitle("Age vs. Total RBC Units Transfused")
 
-# Showing bar chart for massive transfusion
-ggplot(Merged_Frame, aes(x = Massive.Transfusion)) +
-  geom_bar(fill = "orange") +
-  ggtitle("Bar Chart of Massive Transfusions")
-
 
 # Doing a correlation heat map to demonstrate correlation between variables 
 library(corrplot)
@@ -429,13 +424,12 @@ ggplot(Merged_Frame, aes(x = Transplant_Type, y = Total.24hr.RBC)) +
   geom_boxplot() +
   ggtitle("Total RBC Units by Transplant Type")
 
-# Violin Plot of BMI vs. Total RBC Units
-ggplot(Merged_Frame, aes(x = factor(BMI), y = Total.24hr.RBC)) +
-  geom_violin(trim = FALSE, fill = "lightblue") +
-  ggtitle("Violin Plot of BMI vs. Total RBC Units Transfused")
+#  Plot of BMI vs. Total RBC Units
+ggplot(Merged_Frame, aes(x = BMI, y = Total.24hr.RBC)) +
+  geom_point(trim = FALSE, fill = "lightblue") +
+  ggtitle("Scatter Plot of BMI vs. Total RBC Units Transfused")
 
-
-# Bar Plot of average bar plot of blood loss by transfusion type
+# Bar Plot of average of blood loss by transfusion type
 ggplot(Merged_Frame, aes(x = Transplant_Type, y = Blood.Loss)) +
   geom_bar(stat = "summary", fun = "mean", fill = "purple") +
   ggtitle("Average Blood Loss by Transplant Type")
@@ -467,5 +461,3 @@ ggplot(Merged_Frame, aes(x = ECLS_ECMO, y = Total.24hr.RBC)) +
   ggtitle("Average Total 24hr RBC Transfused by ECLS_ECMO Status") +
   xlab("ECLS_ECMO Status") +
   ylab("Average Total 24hr RBC Transfused (units)")
-
-
