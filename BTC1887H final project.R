@@ -7,7 +7,6 @@
 # Loading required packages: 
 library(readxl)
 library(naniar)
-library(mice)
 library(ggplot2)
 library(dplyr)
 library(funModeling)
@@ -255,3 +254,284 @@ filter70_data <- filter70_data %>%
 glimpse(filter70_data)
 colnames(filter70_data)
 
+
+
+
+#################################
+#  IMPUTATION AND COLLINEARITY  #                   
+#################################
+
+# First, initial variable selection was done on the basis of a literature review.
+# Please see attached report for more information.
+
+# First data frame contains "Pre" variables for patients BEFORE surgery, to answer QUESTION 1. 
+View(filter70_data)
+Pre_df <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", 
+                          "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", 
+                          "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", 
+                          "First.Lung.Transplant", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", 
+                          "Total.24hr.RBC", "Pre_Hb","Pre_Hct", "Pre_Platelets", "Pre_INR", "ECLS_ECMO", 
+                          "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", 
+                          "Blood.Loss", "Massive.Transfusion", "RBC.72hr.Total", "FFP.72hr.Total", 
+                          "Plt.72hr.Total", "Cryo.72hr.Total")]
+View(Pre_df)
+
+# Second data frame contains "Post" variables AFTER surgery, to answer QUESTION 2. 
+Post_df <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", 
+                           "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", 
+                           "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", 
+                           "ExVIVO.Lung.Perfusion", "Duration.of.ICU.Stay..days.","ALIVE_30DAYS_YN", 
+                           "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN", "PostDay1_Hb", "PostDay1_Hct", 
+                           "PostDay1_Platelets", "PostDay1_INR", "Total.24hr.RBC", "ECLS_ECMO", 
+                           "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", 
+                           "Intra_Packed.Cells", "Blood.Loss", "Massive.Transfusion")]
+View(Post_df)
+
+
+# Combining the two "Transplant Type" variables into one to aid downstream analysis. 
+Pre_df <- Pre_df %>% 
+  mutate(Transplant_Type = ifelse(Redo.Lung.Transplant == TRUE, "SECOND", "FIRST")) %>%
+  select(-First.Lung.Transplant, -Redo.Lung.Transplant)
+
+# Combining the three "Alive Status" variables into one to aid downstream analysis. 
+Post_df <- Post_df %>%
+  mutate(Minimum_Alive_Days = case_when(
+    ALIVE_12MTHS_YN == "Y" ~ 365,
+    ALIVE_90DAYS_YN == "Y" ~ 90,
+    ALIVE_30DAYS_YN == "Y" ~ 30,
+    TRUE ~ 0
+  )) %>%
+  select(-ALIVE_30DAYS_YN, -ALIVE_90DAYS_YN, -ALIVE_12MTHS_YN)
+
+
+### IMPUTATION ###
+
+# Imputation for the rest of columns
+vis_miss(Pre_df) # Missing under 0.1%
+vis_miss(Post_df) # Missing under 0.1%
+
+# Performing Stochastic Imputation
+# Stochastic imputation was done due to machine learning steps downstream; see report for justification.
+Pre_df <- mice(Pre_df, m = 1, method = 'pmm', seed = 123)
+Pre_df <- complete(Pre_df, 1)
+vis_miss(Pre_df) # No more missing values
+
+Post_df <- mice(Post_df, m = 1, method = 'pmm', seed = 123)
+Post_df <- complete(Post_df, 1)
+vis_miss(Post_df) # No more missing values
+
+# With the imputed data, defining a new variable denoting if the patient had any kind of transfusion.
+Pre_df <- Pre_df %>%
+  mutate(Had.Transfusion = rowSums(select(., Intra_Packed.Cells, Total.24hr.RBC, 
+                                          RBC.72hr.Total, FFP.72hr.Total, 
+                                          Plt.72hr.Total, Cryo.72hr.Total) > 0) > 0)
+
+
+### INVESTIGATING COLLINEARITY ###
+
+# Highly collinear variables should be removed before downstream analysis with regression models.  
+
+# Fitting a linear model with '24hr RBC' as the dependent variable, for Pre_df. 
+model <- lm(Total.24hr.RBC ~ ., data=Pre_df)
+# Calculating Variance Inflation Factor (VIF)
+vif_results <- vif(model)
+# Variables with high collinearity are those with VIF > 5. This includes:
+#   - Pre_Hb
+#   - Pre_Hct
+#   - Intra_Packed.Cells
+#   - Blood.Loss
+#   - RBC.72hr.Total
+#   - Plt.72hr.Total 
+
+# The latter two will not be used in downstream analysis and can be safely removed.
+# Intra_Packed.Cells can be removed as it will be highly collinear with amount of RBCs received.
+# Blood.Loss can be removed as it is not a very useful early predictor of how much transfusion a patient will need.
+# Hematocrit will be removed to limit collinearity with hemoglobin.
+
+Pre_df_1 <- Pre_df %>%
+  select(-Pre_Hct, -Intra_Packed.Cells, -Blood.Loss, -RBC.72hr.Total, 
+         -Plt.72hr.Total, -FFP.72hr.Total, -Cryo.72hr.Total)
+# Checking VIF again: Fitting a linear model with '24hr RBC' as the dependent variable
+model_1.2 <- lm(Total.24hr.RBC ~ ., data=Pre_df)
+# Calculating Variance Inflation Factor (VIF)
+vif_results_1.2 <- vif(model_1.2)
+# Displaying VIF results
+print(vif_results_1.2)
+# Multicollinearity is no longer a big issue in Pre_df with these removals.
+Pre_df <- Pre_df_1
+
+####################################################
+# THE BELOW NEEDS TO BE FIXED LATER!!!!!!!!!!!!!!!!#
+####################################################
+# Fitting a linear model with 'Blood.Loss' as the dependent variable, for Post_df. 
+model_2 <- lm(Blood.Loss ~ ., data=Post_df)
+# Calculating Variance Inflation Factor (VIF)
+vif_results_2 <- vif(model_2)
+# Displaying VIF results
+print(vif_results_2)
+# Total.24hr.RBC and Intra_Packed.Cells are highly collinear
+
+Post_df_1 <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", "Duration.of.ICU.Stay..days.","ALIVE_30DAYS_YN", "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN", "PostDay1_Hb", "PostDay1_Hct", "PostDay1_Platelets", "PostDay1_INR", "Total.24hr.RBC", "ECLS_ECMO", "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Blood.Loss")]
+# Fitting a linear model with 'Blood.Loss' as the dependent variable
+model_2.1 <- lm(Blood.Loss ~ ., data=Post_df_1)
+# Calculating Variance Inflation Factor (VIF)
+vif_results_2.1 <- vif(model_2.1)
+# Displaying VIF results
+print(vif_results_2.1)
+# No more collinearity when removing Intra.Packed.Cells and Massive.Transfusion
+Post_df <- Post_df_1
+
+
+
+
+###############################
+#  EXPLORATORY DATA ANALYSIS  #                   
+###############################
+
+# Question 1 (First part): What are the characteristics of patients receiving transfusions?
+# These characteristics can be isolated using EDA. 
+
+# Performing EDA
+# Creating data frame for continuous and categorical variables
+Merged_Frame <- merge(Pre_df, Post_df)
+View(Merged_Frame)
+
+Continuous_Variables <- Merged_Frame [c("Age", "BMI", "Pre_Hb", "Pre_Platelets", "Pre_INR", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", "Blood.Loss", "Duration.of.ICU.Stay..days.", "PostDay1_Hb", "PostDay1_Hct", "PostDay1_Platelets", "PostDay1_INR", "Total.24hr.RBC")]
+Categorical_Variables <- Merged_Frame [c("Type", "Gender..male.", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "Transplant_Type", "ExVIVO.Lung.Perfusion", "ECLS_ECMO", "ECLS_CPB", "Massive.Transfusion", "Minimum_Alive_Days")]
+
+# Using funmodeling for Continuous Variables 
+basic_eda <- function(Continuous_Variables)
+{
+  glimpse(Continuous_Variables) # Gives information on the data such as number of rows, columns, values in the data frame, and type of data
+  print(status(Continuous_Variables)) # Generates a table with information on the data such as number of zeros and NAs
+  freq(Continuous_Variables)
+  print(profiling_num(Continuous_Variables)) # Generates a table with information on mean, std_dev, variance, skewness of the distribution, kurotsis, IQR, range_98, and range_80  
+  plot_num(Continuous_Variables) # Generates plots for each variable and its data
+  describe(Continuous_Variables) # Generates an extensive summary that includes count, mean, standard deviation, minimum, maximum, and various percentiles for each numeric variable
+}
+
+basic_eda(Continuous_Variables)
+
+# Using funmodeling for Categorical variables 
+basic_eda <- function(Categorical_Variables)
+{
+  glimpse(Categorical_Variables) # Gives information on the data such as number of rows, columns, values in the data frame, and type of data
+  print(status(Categorical_Variables)) # Generates a table with information on the data such as number of zeros and NAs
+  freq(Categorical_Variables)
+  print(profiling_num(Categorical_Variables)) # Generates a table with information on mean, std_dev, variance, skewness of the distribution, kurotsis, IQR, range_98, and range_80  
+  plot_num(Categorical_Variables) # Generates plots for each variable and its data
+  describe(Categorical_Variables) # Generates an extensive summary that includes count, mean, standard deviation, minimum, maximum, and various percentiles for each numeric variable
+}
+
+basic_eda(Categorical_Variables)
+
+# Creating histograms for continuous variables
+for (var in names(Continuous_Variables)) {
+  p <- ggplot(Continuous_Variables, aes_string(x = var)) + 
+    geom_histogram(bins = 30, fill = "pink", color = "black") +
+    theme_minimal() +
+    ggtitle(paste("Histogram of", var))
+  print(p)
+}
+
+# Do a bar plot for Intra_Albumin (Look to group)
+
+# Creating bar plots for categorical variables
+for (var in names(Categorical_Variables)) {
+  p <- ggplot(Categorical_Variables, aes_string(x = var)) + 
+    geom_bar(fill = "purple", color = "black") +
+    theme_minimal() +
+    ggtitle(paste("Bar Plot of", var))
+  print(p)
+}
+
+# Answering: What are the characteristics of patients that require transfusions?
+# Histogram showing amount of transfusion at 24hrs per patient 
+ggplot(Merged_Frame, aes(x = Total.24hr.RBC)) +
+  geom_histogram(bins = 30, fill = "blue", color = "black") +
+  geom_vline(xintercept = 10, color = "red", linetype = "dashed") +
+  ggtitle("Histogram of Total RBC Units Transfused")
+# Dashed line shows threshold of Massive Transfusion
+
+# Showing blood transfusion per gender
+ggplot(Merged_Frame, aes(x = Gender..male., y = Total.24hr.RBC)) +
+  geom_boxplot() +
+  ggtitle("Box Plot of Total RBC Units by Gender")
+
+# Showing blood transfusion per age 
+ggplot(Merged_Frame, aes(x = Age, y = Total.24hr.RBC)) +
+  geom_point() +
+  ggtitle("Age vs. Total RBC Units Transfused")
+
+
+# Doing a correlation heat map to demonstrate correlation between variables 
+library(corrplot)
+continuous_data <- Merged_Frame[, sapply(Merged_Frame, is.numeric)]
+corr_matrix <- cor(continuous_data)
+corrplot(corr_matrix, method = "color")
+
+# Heat map for categorical variables 
+library(reshape2)
+categorical_data <- Merged_Frame[, sapply(Merged_Frame, is.factor)]
+heatmap_data <- as.matrix(cor(sapply(categorical_data, as.numeric)))
+heatmap(heatmap_data)
+
+# Box Plot of Total RBC Units by Transplant Type 
+ggplot(Merged_Frame, aes(x = Transplant_Type, y = Total.24hr.RBC)) +
+  geom_boxplot() +
+  ggtitle("Total RBC Units by Transplant Type")
+
+#  Plot of BMI vs. Total RBC Units
+ggplot(Merged_Frame, aes(x = BMI, y = Total.24hr.RBC)) +
+  geom_point(trim = FALSE, fill = "lightblue") +
+  ggtitle("Scatter Plot of BMI vs. Total RBC Units Transfused")
+
+# Bar Plot of average of RBC units by transfusion type
+ggplot(Merged_Frame, aes(x = Transplant_Type, y = Total.24hr.RBC)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "purple") +
+  ggtitle("Average Blood Loss by Transplant Type")
+
+# Boxplot for Pre_Hb levels by Massive Transfusion 
+ggplot(Merged_Frame, aes(x = factor(Massive.Transfusion), y = Pre_Hb)) +
+  geom_boxplot() +
+  ggtitle("Pre_Hb Levels by Massive Transfusion Requirement")
+
+# Analyzing the relationship between preoperative hemoglobin (Pre_Hb) levels and the total 24-hour red blood cell (RBC) transfusion amount (Total.24hr.RBC)
+ggplot(Merged_Frame, aes(x = Pre_Hb, y = Total.24hr.RBC)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "blue") + # Adds a linear regression line
+  ggtitle("Preoperative Hemoglobin vs. Total 24hr RBC Transfused") +
+  xlab("Preoperative Hemoglobin (g/dL)") +
+  ylab("Total 24hr RBC Transfused (units)")
+
+# Scatter Plot for Pre_INR vs. Total 24-hour RBC
+ggplot(Merged_Frame, aes(x = Pre_INR, y = Total.24hr.RBC)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "blue") +
+  ggtitle("Preoperative INR vs. Total 24hr RBC Transfused") +
+  xlab("Preoperative INR") +
+  ylab("Total 24hr RBC Transfused (units)")
+
+# Bar Plot for ECLS_ECMO vs. Total 24-hour RBC
+ggplot(Merged_Frame, aes(x = ECLS_ECMO, y = Total.24hr.RBC)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "cyan") +
+  ggtitle("Average Total 24hr RBC Transfused by ECLS_ECMO Status") +
+  xlab("ECLS_ECMO Status") +
+  ylab("Average Total 24hr RBC Transfused (units)")
+
+# Bar Plot for Liver Disease vs. Total 24-hour RBC
+ggplot(Merged_Frame, aes(x = Liver.Disease, y = Total.24hr.RBC)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "green") +
+  ggtitle("Average Total 24hr RBC Transfused by Liver Disease Status") +
+  xlab("Liver Disease Status") +
+  ylab("Average Total 24hr RBC Transfused (units)")
+
+
+# Conclusion conclusion blah blah blah
+
+
+
+
+############################################
+#  VARIABLE SELECTION: BOOTSTRAPPED LASSO  #                   
+############################################
