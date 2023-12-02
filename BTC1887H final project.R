@@ -535,3 +535,243 @@ ggplot(Merged_Frame, aes(x = Liver.Disease, y = Total.24hr.RBC)) +
 ############################################
 #  VARIABLE SELECTION: BOOTSTRAPPED LASSO  #                   
 ############################################
+
+# Question 1 (Part 2): What are the factors influencing the need and amount of transfusions?
+
+# To find the factors, bootstrapped lasso can be used.
+# This involves repeatedly training a Lasso regression model or classifier on samples from the dataset, with replacement.
+# Please see report for more information and justification. 
+# The most common predictors that are found in the Lasso models can be fit into linear or logistic regression models,
+# to better understand the impact each predictor has. 
+
+# Models created and bootstrapped:
+#  - Lasso regression with "Total.24hr.RBC" as outcome (to investigate AMOUNT of transfusion)
+#  - Lasso classifier with "Massive.Transfusion" as outcome (to investigate need for MASSIVE transfusion)
+#  - Lasso classifier with "Had.Transfusion" as outcome (to investigate OVERALL NEED for transfusion)
+
+# Setting the total number of bootstraps (repeats) that will be done for all models.  
+num_bootstraps <- 2000
+
+
+### LASSO REGRESSION WITH 24 HR RBC TRANSFUSION AS OUTCOME ###
+
+# Creating a dataset without Massive.Transfusion and Had.Transfusion for this model
+Pre_df_Lasso1 <- Pre_df %>%
+  select(-Had.Transfusion, -Massive.Transfusion)
+
+# Initializing a list to contain all the variables in the 'optimal' regression models. 
+selected_variables <- list()
+
+# Creating a model matrix with the feature values, for the response variable denoting RBCs received at 24 hours. 
+# The first column is excluded since it corresponds to the intercept.
+x <- model.matrix(Total.24hr.RBC ~. , Pre_df_Lasso1)[,-1]
+# Creating a vector with response values
+y <- Pre_df_Lasso1$Total.24hr.RBC
+
+# Main loop to bootstrap Lasso regression and store optimal predictors for each iteration.
+set.seed(123)
+for(i in 1:num_bootstraps) {
+  # Bootstrap sample
+  boot_indices <- sample(1:nrow(Pre_df_Lasso1), replace = TRUE)
+  boot_x <- x[boot_indices,]
+  boot_y <- y[boot_indices]
+  
+  # Lasso regression. cv.glmnet scales input by default.
+  cv.lasso <- cv.glmnet(boot_x, boot_y, alpha = 1, family="gaussian")
+  optimal_lambda <- cv.lasso$lambda.min
+  
+  # Extracting coefficients at the optimal lambda
+  lasso_coefs <- coef(cv.lasso, s = optimal_lambda)
+  non_zero_coefs <- lasso_coefs[lasso_coefs[, 1] != 0, , drop = FALSE]
+  selected_vars_names <- row.names(non_zero_coefs)[-1] # Excluding intercept
+  
+  # Storing names of selected variables
+  selected_variables[[i]] <- selected_vars_names
+}
+
+# Analyzing the frequency of selection for each variable
+all_selected_vars <- unlist(selected_variables)
+variable_selection_freq <- table(all_selected_vars) / num_bootstraps
+
+# Convert the table to a dataframe for easier handling, and sorting by frequency
+variable_selection_df <- as.data.frame(variable_selection_freq)
+names(variable_selection_df) <- c("Variable", "Frequency")
+variable_selection_df <- variable_selection_df[order(-variable_selection_df$Frequency),]
+
+# Finding variables with frequency greater than 80%
+selected_predictors <- subset(variable_selection_df, Frequency > 0.80)
+print(selected_predictors)
+
+# The following predictors for Total.24hr.RBC had a frequency of being in the final model > 80% (in order of frequency):
+#  - Pre_Hb
+#  - Transplant_Type
+#  - ECLS_ECMO
+#  - Intra_Albumin.5...mL.
+#  - Gender..male.
+#  - Intra_Crystalloid..mL
+#  - ECLS_CPB
+#  - Pre_Platelets
+#  - ExVIVO.Lung.Perfusion
+
+# INSERT FREQUENCY PLOT HERE
+
+# INSERT LINEAR REGRESSION SECTION HERE - WILL DO ONCE WE COMBINE THE CODE
+
+
+
+### LASSO CLASSIFIER WITH MASSIVE TRANSFUSION AS OUTCOME ###
+
+# Creating a dataset without Had.Transfusion and Total.24hr.RBC for this model
+Pre_df_Lasso2 <- Pre_df %>%
+  select(-Had.Transfusion, -Total.24hr.RBC)
+
+# Initializing a list to contain all the variables in the 'optimal' classification models. 
+class_selected_variables <- list()
+
+# Creating a model matrix with the feature values, for the response variable Massive Transfusion
+x2 <- model.matrix(Massive.Transfusion ~. , Pre_df_Lasso2)[,-1]
+# Creating a vector with response values
+y2 <- Pre_df_Lasso2$Massive.Transfusion
+
+# Main loop to bootstrap Lasso classifier and store optimal predictors for each iteration.
+set.seed(123)
+for(i in 1:num_bootstraps) {
+  # Separate the data into two groups based on the value of 'Massive.Transfusion'.
+  # This helps in stratified sampling to address class imbalance.
+  indices_0 <- which(y2 == 0)
+  indices_1 <- which(y2 == 1)
+  
+  # Sample separately from each group to ensure representation of both classes in each sample.
+  # For the majority class (0), we sample the usual number minus the count of minority class.
+  sample_0 <- sample(indices_0, size = nrow(Pre_df_Lasso2) - 9, replace = TRUE)
+  # For the minority class (Massive Transfusions), we always sample 9 instances to ensure their presence.
+  # (as there are 9 instances in the original dataset)
+  sample_1 <- sample(indices_1, size = 9, replace = TRUE)
+  
+  # Combine the samples and creating an overall bootstrap sample
+  boot_indices <- c(sample_0, sample_1)
+  boot_x2 <- x2[boot_indices,]
+  boot_y2 <- y2[boot_indices]
+  
+  # Lasso Classification: 
+  # Fitting a Lasso model on the bootstrap sample. cv.glmnet automatically scales the input.
+  cv.lasso2 <- cv.glmnet(boot_x2, boot_y2, alpha = 1, family="binomial")
+  optimal_lambda2 <- cv.lasso2$lambda.min
+  
+  # Extracting coefficients at the optimal lambda
+  # Coefficients not equal to zero indicate selected variables
+  lasso_coefs2 <- coef(cv.lasso2, s = optimal_lambda2)
+  non_zero_coefs2 <- lasso_coefs2[lasso_coefs2[, 1] != 0, , drop = FALSE]
+  selected_vars_names2 <- row.names(non_zero_coefs2)[-1] # Excluding intercept
+  
+  # Storing names of selected variables
+  class_selected_variables[[i]] <- selected_vars_names2
+}
+
+# Analyzing the frequency of selection for each variable
+class_selected_vars_final <- unlist(class_selected_variables)
+class_selection_freq <- table(class_selected_vars_final) / num_bootstraps
+
+# Convert the table to a dataframe for easier handling, and sorting by frequency
+class_selection_df <- as.data.frame(class_selection_freq)
+names(class_selection_df) <- c("Variable", "Frequency")
+class_selection_df <- class_selection_df[order(-class_selection_df$Frequency),]
+
+# Finding variables with frequency greater than 80%
+class_final_predictors <- subset(class_selection_df, Frequency > 0.80)
+print(class_final_predictors)
+
+# The following predictors for Massive.Transfusion had a frequency of being in the final model > 80% (in order of frequency):
+#  - Pre_Hb
+#  - Transplant.Type
+#  - Pre_Platelets
+
+# INSERT FREQUENCY PLOT HERE
+
+# INSERT LOGISTIC REGRESSION SECTION HERE 
+
+
+
+### LASSO CLASSIFIER WITH HAD.TRANSFUSION AS OUTCOME ###
+
+# Creating a dataset without Massive.Transfusion and Total.24hr.RBC for this model
+Pre_df_Lasso3 <- Pre_df %>%
+  select(-Massive.Transfusion, -Total.24hr.RBC) %>%
+  mutate(Had.Transfusion = as.factor(Had.Transfusion))
+
+# Initializing a list to contain all the variables in the 'optimal' classification models. 
+trans_selected_variables <- list()
+
+# Creating a model matrix with the feature values, for the response variable Had.Transfusion
+x3 <- model.matrix(Had.Transfusion ~. , Pre_df_Lasso3)[,-1]
+# Creating a vector with response values
+y3 <- Pre_df_Lasso3$Had.Transfusion
+
+# Main loop 
+set.seed(123)
+for(i in 1:num_bootstraps) {
+  boot_indices3 <- sample(1:nrow(Pre_df_Lasso3), replace = TRUE)
+  boot_x3 <- x3[boot_indices3,]
+  boot_y3 <- y3[boot_indices3]
+  
+  # Fitting a Lasso model on the bootstrap sample
+  cv.lasso3 <- cv.glmnet(boot_x3, boot_y3, alpha = 1, family="binomial")
+  optimal_lambda3 <- cv.lasso3$lambda.min
+  
+  # Extracting coefficients at the optimal lambda
+  # Coefficients not equal to zero indicate selected variables
+  lasso_coefs3 <- coef(cv.lasso3, s = optimal_lambda3)
+  non_zero_coefs3 <- lasso_coefs3[lasso_coefs3[, 1] != 0, , drop = FALSE]
+  selected_vars_names3 <- row.names(non_zero_coefs3)[-1] # Excluding intercept
+  
+  # Storing names of selected variables
+  trans_selected_variables[[i]] <- selected_vars_names3
+}
+
+# Analyzing the frequency of selection for each variable
+trans_selected_vars_final <- unlist(trans_selected_variables)
+trans_selection_freq <- table(trans_selected_vars_final) / num_bootstraps
+
+# Convert the table to a dataframe for easier handling, and sorting by frequency
+trans_selection_df <- as.data.frame(trans_selection_freq)
+names(trans_selection_df) <- c("Variable", "Frequency")
+trans_selection_df <- trans_selection_df[order(-trans_selection_df$Frequency),]
+
+# Finding variables with frequency greater than 80%
+trans_final_predictors <- subset(trans_selection_df, Frequency > 0.80)
+print(trans_final_predictors)
+
+# The following predictors for Had.Transfusion had a frequency of being in the final model > 80% (in order of frequency):
+#  - Pre_Hb
+#  - ECLS_ECMO
+#  - Pulm_Other
+#  - Intra_Albumin.5...mL.
+#  - Intra_Crystalloid..mL
+#  - Type (Single Left Lung)
+#  - Pre_Platelets
+#  - BMI
+#  - Gender..male
+#  - Renal.Failure
+#  - Hypertension
+#  - ExVIVO.Lung.Perfusion
+#  - Coronary.Artery.Disease
+#  - ECLS_CPB
+#  - Type (Single Right Lung)
+#  - Liver.Disease
+#  - Transplant_Type
+#  - 
+
+# INSERT FREQUENCY PLOT HERE
+
+# INSERT LOGISTIC REGRESSION SECTION HERE 
+
+
+
+
+############################################
+#            SURVIVAL ANALYSIS             #                   
+############################################
+
+# Question 2: What is the impact of transfusion on patient outcomes, including mortality?
+
+#
