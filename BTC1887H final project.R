@@ -1,43 +1,28 @@
-# Data Science in Health II
-# Team Project 
+###################################################
+##       BTC1877H Data Science in Health II      ##
+##              Final Project: Code              ##
+##  Leen Madani, Alanna Olteanu, Nishant Sarkar  ##
+###################################################
 
-# Loading the necessary packages
+# Loading required packages: 
 library(readxl)
+library(naniar)
 library(ggplot2)
 library(dplyr)
 library(funModeling)
+library(mice)
 library(survival)
 library(car)
-
-# Loading the data set 
-data <- read_excel("transfusion data.xlsx")
-View(data)
-
-# Take a deeper look at the dataset's structure to understand its components using glimpse() & str()
-str(data)
-glimpse(data) # 192 patiens observations and 117 columns
-              # 1st column is study id
-              #column 112 to 115 do not make sense; no variable name just a number and all NA values so will remove them later
-
-#make.names function to ensure all column names are valid R names. This function will replace spaces and special characters with dots (.) and ensure names are unique and syntactically valid in R.
-names(data) <- make.names(names(data), unique = TRUE)
-
-any(is.na(data)) # check if there is  any missing values portrayed as NA
-
-# Now let's see how many NAs in our dataset
-sum(is.na(data))
-
-summary(data) # can see the number of the missing observations for each variable 
+library(funModeling)
+library(glmnet)
 
 
-# However, NAs are sometimes present in a different format, like empty space, dot, 99, etc.. Let's investigate.
-# Apply table function to each column
-results_na <- lapply(data[,1:117], table) # not ideal because we have many columns; hectic to go through each
+##########################################
+#                OVERVIEW                #      
+##########################################
 
-# We can visualize our missing data using nania package
-#install.packages("naniar")
-library(naniar)
-missing_data <- vis_miss(data) # 24.7% missingness in all the dataset
+# Blah bloo bleee fill this in later
+# Q1 Q2 
 
 ################### 1ST Q ASKS: What are the characteristics of patients that require transfusions, and what are the factors influencing the need and amount of transfusions?
 ### Need to consider variables that describe patient characteristics and factors that might influence the need for a transfusion
@@ -54,36 +39,88 @@ missing_data <- vis_miss(data) # 24.7% missingness in all the dataset
 # Red (Preoperative Bloodwork): Information such as hemoglobin levels, platelets, etc..
 
 
-# check missingness for each predictor
+
+
+##########################################
+#    DATA CLEANING AND PREPROCESSING     #      
+##########################################
+
+# Loading the data set 
+data <- read_excel("transfusion data.xlsx")
+View(data)
+
+# Taking a deeper look at the dataset's structure to understand its components using glimpse() & str()
+str(data)
+glimpse(data) # 192 patient observations and 117 columns.
+# 1st column is study id
+#column 112 to 115 do not make sense; no variable name and all missing; should be removed later. 
+
+# Using make.names() function to ensure all columnS have valid names. This function will replace 
+# spaces and special characters with dots (.) and ensure names are unique and syntactically valid in R.
+names(data) <- make.names(names(data), unique = TRUE)
+
+
+### INVESTIGATING MISSING VALUES ###
+
+# Examining how many values are missing in the dataset.
+sum(is.na(data)) # 5557 missing values.
+summary(data) # To  see the number of the missing observations for each variable. 
+
+# Checking if missing values come in other forms (ex. 99, ?, etc.):
+# Applying table function to each column
+results_na <- lapply(data[,1:117], table) 
+
+# Visualizing the missing data using the Naniar package.
+missing_data <- vis_miss(data) 
+# 24.7% missingness in the overall dataset. 
+
+################### 1ST Q ASKS: What are the characteristics of patients that require transfusions, and what are the factors influencing the need and amount of transfusions?
+### Need to consider variables that describe patient characteristics and factors that might influence the need for a transfusion
+### Relevant sections include: 
+# Orange (Patient Demographic Data).
+# Green (Underlying Respiratory Diagnosis + Intraoperative Descriptions): patient's respiratory health status 
+# and details about their lung transplant surgery, which could influence the need for transfusions.
+# Yellow (Blood Product Transfusion Data).
+
+
+################# 2nd Q ASKS: What is the impact of transfusion on patient outcomes, including mortality?
+## Need to analyze the relationship between transfusion data and patient outcomes, so we need:
+# Yellow (Blood Product Transfusion Data)
+# Blue (Survival and ICU LOS Data): Variables related to patient survival (like mortality rates at different 
+# time points post-transplant) and the length of stay in the ICU.
+# Red (Preoperative Bloodwork): Information such as hemoglobin levels, platelets, etc.
+
+
+# Checking missingness for each variable. 
 missing_before_filter <- sapply(data, function(x) sum(is.na(x)) / length(x) * 100)
 missing_before_filter
 
-# for time-dependent variables, such as date of icu dishcagre or duration, missinginess  might be informative in itself and needs careful consideration
+# for time-dependent variables, such as date of ICU discharge, missinginess might be informative in itself and needs careful consideration
 
-# Let's eliminate columns with 30% or more missinginess
+# Eliminating columns with 30% or more missinginess:
 # Identify these columns with less than 30% missingness
 columns_to_keep <- names(which(missing_before_filter < 30))
 
-# Selecting these columns from the original dataset and this will also remove the columns 112 to 115 that have no values
+# Selecting these columns from the original dataset (will also remove columns 112-115, which are erroneous)
 filter70_data <- data %>% 
   select(all_of(columns_to_keep))
-  
-# now we have 80 variables (out of 117)
 
-vis_miss(filter70_data) # now we have 0.8% missingness instead of 24.7%
+# 80 variables remaining (out of 117).
+
+# Reassessing missingness: 
+vis_miss(filter70_data) # Now we have 0.8% missingness instead of 24.7%.
 missing_after <- as.data.frame(sapply(filter70_data, function(x) sum(is.na(x)) / length(x) * 100))
-colnames(missing_after) <- "Percent_Missing" # double check to see missigness percentage in every variable
+colnames(missing_after) <- "Percent_Missing" 
+missing_after # Double checking to see missigness percentage in every variable.
+
+# Missing values will be imputed in a later step.
 
 
-# lets try and do MI on the others 
-# load the mice package
-library(mice)
+### DATA RESTRUCTURING ###
 
-glimpse(filter70_data)
-
-# before, encode categorical factors as factors before imputing to use approrpiate method 
-# variables like Type, Gender (male), COPD, etc., which are character types, should be converted to factors.
-# be aware of Date.of.Extubation which is encoded as character (but should be dttm) 
+# All variables should be properly encoded to reflect their nature.
+# Variables like Type, Gender (male), COPD, etc., which are currently chars, should be converted to factors.
+# Date.of.Extubation is encoded as a character (but should be dttm). 
 
 ###### All variables encoded as chr but should be factor: 
 # Type, Gender,COPD, alpha1-Antitrypsin Deficiency, Cystic Fibrosis, Idiopathic Pulmonary Hypertension, 
@@ -91,27 +128,21 @@ glimpse(filter70_data)
 # GERD/PUD, Renal Failure, Stroke/CVA, Liver Disease, Thyroid Disease, First Lung Transplant, Redo Lung Transplant, ExVIVO Lung Perfusion, 
 # Preoperative ECLS, Intraoperative ECLS, ECLS_ECMO, ECLS_CPB, Protamine (Y=1 N=0), Tranexamic Acid Used, Need for reoperation for bleeding within 24h, ALIVE_30DAYS_YN, ALIVE_90DAYS_YN, ALIVE_12MTHS_YN
 
-
-# Intraoperative.ECLS encoded as lgl but should be factor 
-# Protamine..Y.1.N.0. ecnoded as dbl but should be factor and it should take values of 0s and 1s where 0 means it was NOT administered vs 1 meaning opposite
-# however, 3 values are 25, 150, and 400 so lets let's change these values to NA 
-table(filter70_data$Protamine..Y.1.N.0.) 
-# and encode protamine as factor
+# Intraoperative.ECLS encoded as lgl but should be factor. 
 
 # Intra_Albumin.5...mL. is chr but should be dbl (not factor)
 table(filter70_data$Intra_Albumin.5...mL.)
-# has a weird value of 0+AQ7.. change to 0
+# Also, this variable has a strange value of 0+AQ7. We will assume this should be 0.
 
-# Date.of.Extubation column was processed weirdly when loaded into R (not proceessed as the other date and time as the other date/time variable)
+# Date.of.Extubation column was processed incorrectly when loaded into R (dissimilar to other date/time variables).
+# This should be fixed. 
 filter70_data$Date.of.Extubation <- as.POSIXct(as.numeric(filter70_data$Date.of.Extubation) * (60*60*24),
                                                origin="1899-12-30", tz="UTC")
-glimpse(filter70_data)
-#Massive transfusion is dbl but represented as 0s and 1s, so its a binary indicator
 
-#### Ensure dates are in dttm 
-# OR Date, ICU Admission Date/Time, ICU Discharge Date/Time, Date of Extubation, ICU Admit Date-Time, ICU Discharge Date-Time, Extubation Date
+#Massive transfusion is dbl but represented as 0s and 1s, so its a binary indicator and should be fixed. 
 
-######### Now, lets incorporate all these changes: 
+
+######### Restructuring variables according to these required changes: 
 filter70_data <- filter70_data %>%
   # Convert all character variables to factors, except for Intra_Albumin.5...mL.
   mutate_if(~ is.character(.) && !identical(colnames(.), "Intra_Albumin.5...mL."), as.factor) %>%
@@ -125,27 +156,10 @@ filter70_data <- filter70_data %>%
   # Encode massive transfusion as factor 
   mutate(Massive.Transfusion = as.factor(Massive.Transfusion))
 
-#double check 
+# Double checking. 
 glimpse(filter70_data)
 
-# Imputation errors are resulting when running MI and this could be due to: 
-# 1) High Collinearity: If data have variables that are highly correlated with each other, it can cause multicollinearity problems in regression models.
-# can check using VIF
-# library(car)
-# create linear model fitted in ourdataset
-# vif_values <- vif(lm_model)
-# high_collinearity <- names(vif_values[vif_values > 5])  # VIF > 5 is a common threshold
-
-# 2) Sparse Data or Categories with Very Few Observations: For categorical variables, having categories with very few observations can lead to singularities.
-# use table function for each variable seperately or use sapply: 
-
-# 3) Very Low Variance in a Variable: If a variable has very low variance (i.e., most of its values are the same), it can lead to issues in the regression model used for imputation
-### Can check using this line of code: 
-#variances <- sapply(filter70_data, var, na.rm = TRUE)
-#low_variance <- names(variances[variances < some_threshold])  # Set some_threshold appropriately
-
-
-# Let's analyze each variable with missing values so MI runs properly 
+# Analyzing each variable with missing data:
 
 ###### 1) DCD.vs.DBD which has 7.27% missingness
 # this variable relates to the donor itself (not patient); different types of organ donors used in lung transplantation
@@ -155,28 +169,22 @@ table(filter70_data$DCD.vs.DBD)
 # NDD: Neurological Determination of Death or brain death basically 
 # FALSE: ??? (2 observations has FALSE)
 
-# Let's change the 2 FALSE encoded values to NA so it is easier to perform any sort of analysis on this predictor if we want to use it later no
+# Changing the 2 FALSE encoded values to NA so they can be imputed downstream.
 filter70_data <- filter70_data %>% 
   mutate(DCD.vs.DBD = ifelse(DCD.vs.DBD == "FALSE", NA, DCD.vs.DBD))
 
 table(filter70_data$DCD.vs.DBD) # we have 119 DBD, 45 DCD, 12 NDD
 
-# remove the DCD predictor if we decide its unnecessary 
-filterDCD_data <- filter70_data %>% 
-  select(-DCD.vs.DBD)
-
 ########## LAS.score 6.25%
 # it is a lung allocation score; used with blood type and the distance between the candidate and the donor hospital to determine priority for receiving a lung transplant
-# it is important because if we have a higher score, then this means the patient is in urgent need for an organ and probably impacts its need for blood transufions 
-# since its scores(numeric), use pmm method for when doing multiple imputation
-
+# it is important because if we have a higher score, then this means the patient is in urgent need for an organ and probably impacts their need for blood transfusion.
 
 ######### Pre_PTT (partial thromboplastin time) 0.52%
 # time it takes for a clot to form in a blood sample
 # imp as could influence need of transfusion
 
 ####### Blood.Loss 1.042 % missing 
-table(filter70_data$Blood.Loss) # looks good in terms of legit values and its a necessary predictor
+table(filter70_data$Blood.Loss) # looks good in terms of legitimate values and its a necessary variable
 # same for urine output and fluid balance
 
 ####### ICU.Discharge.Date.Time 0.52% & Duration.of.ICU.Stay..days. 0.52%
@@ -184,13 +192,18 @@ table(filter70_data$ICU.Discharge.Date.Time)
 table(filter70_data$Duration.of.ICU.Stay..days.) # looks fine 
 # also missingness in discharge time (which is one observation) is most likely MNAR because patient might have died, so no discharge 
 
-##### these variables are repeated twice in the dataset!
+#####PostImmediate_PTT 1.042%, PostImmediate_Creatinine 1.56%
 
-#ICU.Admission.Date.Time 0.0000000
-#ICU.Discharge.Date.Time 0.5208333
-#Duration.of.ICU.Stay..days. 0.5208333
-#Date.of.Extubation 0.0000000
-#Duration.of.Ventilation 30.2083333
+
+### OTHER DATA CLEANING ###
+
+##### Some variables are represented twice in the dataset, with different missingness:
+
+# ICU.Admission.Date.Time 0.0000000
+# ICU.Discharge.Date.Time 0.5208333
+# Duration.of.ICU.Stay..days. 0.5208333
+# Date.of.Extubation 0.0000000
+# Duration.of.Ventilation 30.2083333
 
 # ICU.Admit.Date.Time 16.6666667
 # ICU.Discharge.Date.Time.1 17.7083333
@@ -199,7 +212,7 @@ table(filter70_data$Duration.of.ICU.Stay..days.) # looks fine
 # Duration.of.Mechanical.Ventilation..days. 34.3750000
 
 
-### lets do a side by side comparison to see where difference is
+### Conducting a side by side comparison to see what the differences are. 
 comparison_data <- filter70_data %>%
   select(
     ICU.Admission.Date.Time,
@@ -208,28 +221,18 @@ comparison_data <- filter70_data %>%
     ICU.Discharge.Date.Time.1,
     Duration.of.ICU.Stay..days.,
     Duration.of.ICU.stay..days.) 
-# let's remove the latter ones as they have more missingess compared to the former ones
 
+# The latter set will be removed as they have more missing values, but otherwise seem to be the same.
 filter70_data <- filter70_data %>%
   select(
     -ICU.Admit.Date.Time,
     -ICU.Discharge.Date.Time.1,
     -Duration.of.ICU.stay..days.)
 
-glimpse(filter70_data) # 77 variables for now
+glimpse(filter70_data) # 77 variables remaining. 
 
-#####PostImmediate_PTT 1.042%, PostImmediate_Fibrinogen 65.63%, PostImmediate_Creatinine 1.56%
-# these can be used to assess patient need for transfusion 
-table(filter70_data$PostImmediate_PTT)
-table(filter70_data$PostImmediate_Fibrinogen)
-table(filter70_data$Pre_Creatinine)
-#### to be aware of: PTT and fibrogen have negative values, which I think could indicitate very very low levels but to having negative levels is not plausible
 
-######### PostDay Measurements (4)
-## In PostDay1_PTT, we have one negative value
-## can be used in patient need for transfusion
-
-##### Let's check for negative values across the dataset
+##### It appears that some variables have negative values; these should be fixed where necessary.
 # Check for negative values in each column
 negative_counts <- sapply(filter70_data, function(x) sum(x < 0, na.rm = TRUE))
 
@@ -244,146 +247,740 @@ filter70_data <- filter70_data %>%
     PostDay1_PTT = ifelse(PostDay1_PTT < 0, NA, PostDay1_PTT)
   )
 
-glimpse(filter70_data)
 
+### DATA PREPROCESSING COMPLETED ###
+
+glimpse(filter70_data)
 colnames(filter70_data)
 
+#################################
+#  IMPUTATION AND COLLINEARITY  #                   
+#################################
 
-############################################################################
+# First, initial variable selection was done on the basis of a literature review.
+# Please see attached report for more information.
 
-######ALANNA###########
-# Creation of new data frame with selected variables based on literature review
-# First data frame contains "Pre" variables to answer first question
+# First data frame contains "Pre" variables for patients BEFORE surgery, to answer QUESTION 1. 
 View(filter70_data)
-Pre_df <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "First.Lung.Transplant", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", "Pre_Hb","Pre_Hct", "Pre_Platelets", "Pre_INR", "ECLS_ECMO", "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", "Blood.Loss", "Massive.Transfusion" )]
+Pre_df <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", 
+                          "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", 
+                          "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", 
+                          "First.Lung.Transplant", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", 
+                          "Total.24hr.RBC", "Pre_Hb","Pre_Hct", "Pre_Platelets", "Pre_INR", "ECLS_ECMO", 
+                          "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", 
+                          "Blood.Loss", "Massive.Transfusion", "RBC.72hr.Total", "FFP.72hr.Total", 
+                          "Plt.72hr.Total", "Cryo.72hr.Total")]
 View(Pre_df)
-# Second data frame contains "Post" variables to answer the second question
-Post_df <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "ExVIVO.Lung.Perfusion", "Duration.of.ICU.Stay..days.","ALIVE_30DAYS_YN", "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN", "PostDay1_Hb", "PostDay1_Hct", "PostDay1_Platelets", "PostDay1_INR", "Total.24hr.RBC", "ECLS_ECMO", "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", "Blood.Loss", "Massive.Transfusion")]
+
+# Second data frame contains "Post" variables AFTER surgery, to answer QUESTION 2. 
+Post_df <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", 
+                           "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", 
+                           "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", 
+                           "ExVIVO.Lung.Perfusion","ALIVE_30DAYS_YN", "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN", "PostDay1_Hb", "PostDay1_Hct", "PostDay1_Creatinine",
+                           "PostDay1_Platelets", "Total.24hr.RBC", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", 
+                           "Intra_Packed.Cells", "Intra_Fresh.Frozen.Plasma", "Intra_Cryoprecipitate", 
+                           "Intra_Platelets", "FFP.72hr.Total", 
+                           "Plt.72hr.Total", "Cryo.72hr.Total", "PostDay1_PT", "PostDay1_PTT", "HOSPITAL_LOS", "Duration.of.ICU.Stay..days.")]
+
+
 View(Post_df)
+glimpse(filter70_data)
 
-
-#  combine the 'First Lung Transplant' and 'Redo Lung Transplant' variables into a single variable with two levels: 'FIRST' and 'SECOND'.
+# Combining the two "Transplant Type" variables into one to aid downstream analysis. 
 Pre_df <- Pre_df %>% 
   mutate(Transplant_Type = ifelse(Redo.Lung.Transplant == TRUE, "SECOND", "FIRST")) %>%
   select(-First.Lung.Transplant, -Redo.Lung.Transplant)
 
 
 
-# now do the same for Alive in 30, 90, 12 months variable 
-# If a patient survived 12 months, they're assigned 365 days.
-# If a patient didn't survive 12 months but did survive 90 days, they're assigned 90 days.
-# If a patient didn't survive 90 days but did survive 30 days, they're assigned 30 days.
-# If a patient didn't survive 30 days, and none of the above conditions are met, they're assigned 0 days.
+### IMPUTATION ###
 
-Post_df <- Post_df %>%
-  mutate(Minimum_Alive_Days = case_when(
-    ALIVE_12MTHS_YN == "Y" ~ 365,
-    ALIVE_12MTHS_YN == "N" & ALIVE_90DAYS_YN == "Y" ~ 90,
-    ALIVE_12MTHS_YN == "N" & ALIVE_90DAYS_YN == "N" & ALIVE_30DAYS_YN == "Y" ~ 30,
-    ALIVE_30DAYS_YN == "N" ~ 0,  
-    TRUE ~ 0
-  )) %>% 
-  select(-ALIVE_30DAYS_YN, -ALIVE_90DAYS_YN, -ALIVE_12MTHS_YN)
-
-as.factor(Post_df$Minimum_Alive_Days)
-
-
-  
-
-# IMPUTING THE DATA
 # Imputation for the rest of columns
 vis_miss(Pre_df) # Missing under 0.1%
-vis_miss(Post_df) # Missing under 0.1%
+vis_miss(Post_df) # Missing under 0.2%
 
 # Performing Stochastic Imputation
-# Only doing one imputation rather than doing multiple imputations 
+# Stochastic imputation was done due to machine learning steps downstream; see report for justification.
 Pre_df <- mice(Pre_df, m = 1, method = 'pmm', seed = 123)
 Pre_df <- complete(Pre_df, 1)
-vis_miss(Pre_df) # No more NA Values
+vis_miss(Pre_df) # No more missing values
 
-# Only doing one imputation rather than doing multiple imputations
 Post_df <- mice(Post_df, m = 1, method = 'pmm', seed = 123)
 Post_df <- complete(Post_df, 1)
-vis_miss(Post_df) # No more NA Values
+vis_miss(Post_df) # No more missing values
+
+# With the imputed data, defining a new variable denoting if the patient had any kind of transfusion.
+Pre_df <- Pre_df %>%
+  mutate(Had.Transfusion = rowSums(select(., Intra_Packed.Cells, Total.24hr.RBC, 
+                                          RBC.72hr.Total, FFP.72hr.Total, 
+                                          Plt.72hr.Total, Cryo.72hr.Total) > 0) > 0)
 
 
-# CHECKING FOR COLLINEARITY
-# Fitting a linear model with 'Blood.Loss' as the dependent variable
-model <- lm(Blood.Loss ~ ., data=Pre_df)
+### INVESTIGATING COLLINEARITY ###
+
+# Highly collinear variables should be removed before downstream analysis with regression models.  
+
+# Fitting a linear model with '24hr RBC' as the dependent variable, for Pre_df. 
+model <- lm(Total.24hr.RBC ~ ., data=Pre_df)
 # Calculating Variance Inflation Factor (VIF)
 vif_results <- vif(model)
-# Identifying variables with high collinearity
-high_vif <- vif_results[vif_results > 5]  # You can also use 10 as a threshold
-print(high_vif)
-# Pre_Hb and Pre_Hct are highly collinear
+# Variables with high collinearity are those with VIF > 5. This includes:
+#   - Pre_Hb
+#   - Pre_Hct
+#   - Intra_Packed.Cells
+#   - Blood.Loss
+#   - RBC.72hr.Total
+#   - Plt.72hr.Total 
 
-Pre_df_1 <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", "Pre_Hb", "Pre_Platelets", "Pre_INR", "ECLS_ECMO", "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", "Blood.Loss", "Massive.Transfusion" )]
-# Fitting a linear model with 'Blood.Loss' as the dependent variable
-model_1.2 <- lm(Blood.Loss ~ ., data=Pre_df_1)
+# The latter two will not be used in downstream analysis and can be safely removed.
+# Intra_Packed.Cells can be removed as it will be highly collinear with amount of RBCs received.
+# Blood.Loss can be removed as it is not a very useful early predictor of how much transfusion a patient will need.
+# Hematocrit will be removed to limit collinearity with hemoglobin.
+
+Pre_df_1 <- Pre_df %>%
+  select(-Pre_Hct, -Intra_Packed.Cells, -Blood.Loss, -RBC.72hr.Total, 
+         -Plt.72hr.Total, -FFP.72hr.Total, -Cryo.72hr.Total)
+# Checking VIF again: Fitting a linear model with '24hr RBC' as the dependent variable
+model_1.2 <- lm(Total.24hr.RBC ~ ., data=Pre_df)
 # Calculating Variance Inflation Factor (VIF)
 vif_results_1.2 <- vif(model_1.2)
 # Displaying VIF results
 print(vif_results_1.2)
-# When removing Pre_Hct, no more collinearity is present
+# Multicollinearity is no longer a big issue in Pre_df with these removals.
 Pre_df <- Pre_df_1
 
-# Fitting a linear model with 'Blood.Loss' as the dependent variable
-model_2 <- lm(Blood.Loss ~ ., data=Post_df)
-# Calculating Variance Inflation Factor (VIF)
-vif_results_2 <- vif(model_2)
-# Displaying VIF results
-print(vif_results_2)
-# Total.24hr.RBC and Intra_Packed.Cells are highly collinear
 
-Post_df_1 <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "Redo.Lung.Transplant", "ExVIVO.Lung.Perfusion", "Duration.of.ICU.Stay..days.","ALIVE_30DAYS_YN", "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN", "PostDay1_Hb", "PostDay1_Hct", "PostDay1_Platelets", "PostDay1_INR", "Total.24hr.RBC", "ECLS_ECMO", "ECLS_CPB", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Blood.Loss")]
-# Fitting a linear model with 'Blood.Loss' as the dependent variable
-model_2.1 <- lm(Blood.Loss ~ ., data=Post_df_1)
-# Calculating Variance Inflation Factor (VIF)
-vif_results_2.1 <- vif(model_2.1)
-# Displaying VIF results
-print(vif_results_2.1)
-# No more collinearity when removing Intra.Packed.Cells and Massive.Transfusion
-Post_df <- Post_df_1
+###############################
+#  EXPLORATORY DATA ANALYSIS  #                   
+###############################
 
-# Question 1
+# Question 1 (First part): What are the characteristics of patients receiving transfusions?
+# These characteristics can be isolated using EDA. 
+
 # Performing EDA
-basic_eda <- function(Pre_df)
+# Creating data frame for continuous and categorical variables
+Merged_Frame <- merge(Pre_df, Post_df)
+View(Merged_Frame)
+
+Continuous_Variables <- Merged_Frame [c("Age", "BMI", "Pre_Hb", "Pre_Platelets", "Pre_INR", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", "Intra_Packed.Cells", "Blood.Loss", "Duration.of.ICU.Stay..days.", "PostDay1_Hb", "PostDay1_Hct", "PostDay1_Platelets", "PostDay1_INR", "Total.24hr.RBC")]
+Categorical_Variables <- Merged_Frame [c("Type", "Gender..male.", "COPD", "Cystic.Fibrosis", "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", "Transplant_Type", "ExVIVO.Lung.Perfusion", "ECLS_ECMO", "ECLS_CPB", "Massive.Transfusion", "Minimum_Alive_Days")]
+
+# Using funmodeling for Continuous Variables 
+basic_eda <- function(Continuous_Variables)
 {
-  glimpse(Pre_df) # Gives information on the data such as number of rows, columns, values in the data frame, and type of data
-  print(status(Pre_df)) # Generates a table with information on the data such as number of zeros and NAs
-  freq(Pre_df)
-  print(profiling_num(Pre_df)) # Generates a table with information on mean, std_dev, variance, skewness of the distribution, kurotsis, IQR, range_98, and range_80  
-  plot_num(Pre_df) # Generates plots for each variable and its data
-  describe(Pre_df) # Generates an extensive summary that includes count, mean, standard deviation, minimum, maximum, and various percentiles for each numeric variable
+  glimpse(Continuous_Variables) # Gives information on the data such as number of rows, columns, values in the data frame, and type of data
+  print(status(Continuous_Variables)) # Generates a table with information on the data such as number of zeros and NAs
+  freq(Continuous_Variables)
+  print(profiling_num(Continuous_Variables)) # Generates a table with information on mean, std_dev, variance, skewness of the distribution, kurotsis, IQR, range_98, and range_80  
+  plot_num(Continuous_Variables) # Generates plots for each variable and its data
+  describe(Continuous_Variables) # Generates an extensive summary that includes count, mean, standard deviation, minimum, maximum, and various percentiles for each numeric variable
 }
 
-basic_eda(Pre_df)
+basic_eda(Continuous_Variables)
+
+# Using funmodeling for Categorical variables 
+basic_eda <- function(Categorical_Variables)
+{
+  glimpse(Categorical_Variables) # Gives information on the data such as number of rows, columns, values in the data frame, and type of data
+  print(status(Categorical_Variables)) # Generates a table with information on the data such as number of zeros and NAs
+  freq(Categorical_Variables)
+  print(profiling_num(Categorical_Variables)) # Generates a table with information on mean, std_dev, variance, skewness of the distribution, kurotsis, IQR, range_98, and range_80  
+  plot_num(Categorical_Variables) # Generates plots for each variable and its data
+  describe(Categorical_Variables) # Generates an extensive summary that includes count, mean, standard deviation, minimum, maximum, and various percentiles for each numeric variable
+}
+
+basic_eda(Categorical_Variables)
+
+# Creating histograms for continuous variables
+for (var in names(Continuous_Variables)) {
+  p <- ggplot(Continuous_Variables, aes_string(x = var)) + 
+    geom_histogram(bins = 30, fill = "pink", color = "black") +
+    theme_minimal() +
+    ggtitle(paste("Histogram of", var))
+  print(p)
+}
+
+# Do a bar plot for Intra_Albumin (Look to group)
+
+# Creating bar plots for categorical variables
+for (var in names(Categorical_Variables)) {
+  p <- ggplot(Categorical_Variables, aes_string(x = var)) + 
+    geom_bar(fill = "purple", color = "black") +
+    theme_minimal() +
+    ggtitle(paste("Bar Plot of", var))
+  print(p)
+}
+
+# Answering: What are the characteristics of patients that require transfusions?
+# Histogram showing amount of transfusion at 24hrs per patient 
+ggplot(Merged_Frame, aes(x = Total.24hr.RBC)) +
+  geom_histogram(bins = 30, fill = "blue", color = "black") +
+  geom_vline(xintercept = 10, color = "red", linetype = "dashed") +
+  ggtitle("Histogram of Total RBC Units Transfused")
+# Dashed line shows threshold of Massive Transfusion
+
+# Showing blood transfusion per gender
+ggplot(Merged_Frame, aes(x = Gender..male., y = Total.24hr.RBC)) +
+  geom_boxplot() +
+  ggtitle("Box Plot of Total RBC Units by Gender")
+
+# Showing blood transfusion per age 
+ggplot(Merged_Frame, aes(x = Age, y = Total.24hr.RBC)) +
+  geom_point() +
+  ggtitle("Age vs. Total RBC Units Transfused")
+
+
+# Doing a correlation heat map to demonstrate correlation between variables 
+library(corrplot)
+continuous_data <- Merged_Frame[, sapply(Merged_Frame, is.numeric)]
+corr_matrix <- cor(continuous_data)
+corrplot(corr_matrix, method = "color")
+
+# Heat map for categorical variables 
+library(reshape2)
+categorical_data <- Merged_Frame[, sapply(Merged_Frame, is.factor)]
+heatmap_data <- as.matrix(cor(sapply(categorical_data, as.numeric)))
+heatmap(heatmap_data)
+
+# Box Plot of Total RBC Units by Transplant Type 
+ggplot(Merged_Frame, aes(x = Transplant_Type, y = Total.24hr.RBC)) +
+  geom_boxplot() +
+  ggtitle("Total RBC Units by Transplant Type")
+
+#  Plot of BMI vs. Total RBC Units
+ggplot(Merged_Frame, aes(x = BMI, y = Total.24hr.RBC)) +
+  geom_point(trim = FALSE, fill = "lightblue") +
+  ggtitle("Scatter Plot of BMI vs. Total RBC Units Transfused")
+
+# Bar Plot of average of RBC units by transfusion type
+ggplot(Merged_Frame, aes(x = Transplant_Type, y = Total.24hr.RBC)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "purple") +
+  ggtitle("Average Blood Loss by Transplant Type")
+
+# Boxplot for Pre_Hb levels by Massive Transfusion 
+ggplot(Merged_Frame, aes(x = factor(Massive.Transfusion), y = Pre_Hb)) +
+  geom_boxplot() +
+  ggtitle("Pre_Hb Levels by Massive Transfusion Requirement")
+
+# Analyzing the relationship between preoperative hemoglobin (Pre_Hb) levels and the total 24-hour red blood cell (RBC) transfusion amount (Total.24hr.RBC)
+ggplot(Merged_Frame, aes(x = Pre_Hb, y = Total.24hr.RBC)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "blue") + # Adds a linear regression line
+  ggtitle("Preoperative Hemoglobin vs. Total 24hr RBC Transfused") +
+  xlab("Preoperative Hemoglobin (g/dL)") +
+  ylab("Total 24hr RBC Transfused (units)")
+
+# Scatter Plot for Pre_INR vs. Total 24-hour RBC
+ggplot(Merged_Frame, aes(x = Pre_INR, y = Total.24hr.RBC)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "blue") +
+  ggtitle("Preoperative INR vs. Total 24hr RBC Transfused") +
+  xlab("Preoperative INR") +
+  ylab("Total 24hr RBC Transfused (units)")
+
+# Bar Plot for ECLS_ECMO vs. Total 24-hour RBC
+ggplot(Merged_Frame, aes(x = ECLS_ECMO, y = Total.24hr.RBC)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "cyan") +
+  ggtitle("Average Total 24hr RBC Transfused by ECLS_ECMO Status") +
+  xlab("ECLS_ECMO Status") +
+  ylab("Average Total 24hr RBC Transfused (units)")
+
+# Bar Plot for Liver Disease vs. Total 24-hour RBC
+ggplot(Merged_Frame, aes(x = Liver.Disease, y = Total.24hr.RBC)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "green") +
+  ggtitle("Average Total 24hr RBC Transfused by Liver Disease Status") +
+  xlab("Liver Disease Status") +
+  ylab("Average Total 24hr RBC Transfused (units)")
+
+
+# Conclusion conclusion blah blah blah
+
+
+############################################
+#  VARIABLE SELECTION: BOOTSTRAPPED LASSO  #                   
+############################################
+
+# Question 1 (Part 2): What are the factors influencing the need and amount of transfusions?
+
+# To find the factors, bootstrapped lasso can be used.
+# This involves repeatedly training a Lasso regression model or classifier on samples from the dataset, with replacement.
+# Please see report for more information and justification. 
+# The most common predictors that are found in the Lasso models can be fit into linear or logistic regression models,
+# to better understand the impact each predictor has. 
+
+# Models created and bootstrapped:
+#  - Lasso regression with "Total.24hr.RBC" as outcome (to investigate AMOUNT of transfusion)
+#  - Lasso classifier with "Massive.Transfusion" as outcome (to investigate need for MASSIVE transfusion)
+#  - Lasso classifier with "Had.Transfusion" as outcome (to investigate OVERALL NEED for transfusion)
+
+# Setting the total number of bootstraps (repeats) that will be done for all models.  
+num_bootstraps <- 2000
+
+
+### LASSO REGRESSION WITH 24 HR RBC TRANSFUSION AS OUTCOME ###
+
+# Creating a dataset without Massive.Transfusion and Had.Transfusion for this model
+Pre_df_Lasso1 <- Pre_df %>%
+  select(-Had.Transfusion, -Massive.Transfusion)
+
+# Initializing a list to contain all the variables in the 'optimal' regression models. 
+selected_variables <- list()
+
+# Creating a model matrix with the feature values, for the response variable denoting RBCs received at 24 hours. 
+# The first column is excluded since it corresponds to the intercept.
+x <- model.matrix(Total.24hr.RBC ~. , Pre_df_Lasso1)[,-1]
+# Creating a vector with response values
+y <- Pre_df_Lasso1$Total.24hr.RBC
+
+# Main loop to bootstrap Lasso regression and store optimal predictors for each iteration.
+set.seed(123)
+for(i in 1:num_bootstraps) {
+  # Bootstrap sample
+  boot_indices <- sample(1:nrow(Pre_df_Lasso1), replace = TRUE)
+  boot_x <- x[boot_indices,]
+  boot_y <- y[boot_indices]
+  
+  # Lasso regression. cv.glmnet scales input by default.
+  cv.lasso <- cv.glmnet(boot_x, boot_y, alpha = 1, family="gaussian")
+  optimal_lambda <- cv.lasso$lambda.min
+  
+  # Extracting coefficients at the optimal lambda
+  lasso_coefs <- coef(cv.lasso, s = optimal_lambda)
+  non_zero_coefs <- lasso_coefs[lasso_coefs[, 1] != 0, , drop = FALSE]
+  selected_vars_names <- row.names(non_zero_coefs)[-1] # Excluding intercept
+  
+  # Storing names of selected variables
+  selected_variables[[i]] <- selected_vars_names
+}
+
+# Analyzing the frequency of selection for each variable
+all_selected_vars <- unlist(selected_variables)
+variable_selection_freq <- table(all_selected_vars) / num_bootstraps
+
+# Convert the table to a dataframe for easier handling, and sorting by frequency
+variable_selection_df <- as.data.frame(variable_selection_freq)
+names(variable_selection_df) <- c("Variable", "Frequency")
+variable_selection_df <- variable_selection_df[order(-variable_selection_df$Frequency),]
+
+# Finding variables with frequency greater than 80%
+selected_predictors <- subset(variable_selection_df, Frequency > 0.80)
+print(selected_predictors)
+
+# The following predictors for Total.24hr.RBC had a frequency of being in the final model > 80% (in order of frequency):
+#  - Pre_Hb
+#  - Transplant_Type
+#  - ECLS_ECMO
+#  - Intra_Albumin.5...mL.
+#  - Gender..male.
+#  - Intra_Crystalloid..mL
+#  - ECLS_CPB
+#  - Pre_Platelets
+#  - ExVIVO.Lung.Perfusion
+
+# INSERT FREQUENCY PLOT HERE
+
+# INSERT LINEAR REGRESSION SECTION HERE - WILL DO ONCE WE COMBINE THE CODE
 
 
 
+### LASSO CLASSIFIER WITH MASSIVE TRANSFUSION AS OUTCOME ###
 
-#############################################################################
+# Creating a dataset without Had.Transfusion and Total.24hr.RBC for this model
+Pre_df_Lasso2 <- Pre_df %>%
+  select(-Had.Transfusion, -Total.24hr.RBC)
 
-###### Q2) SURVIVAL ANALYSISS
+# Initializing a list to contain all the variables in the 'optimal' classification models. 
+class_selected_variables <- list()
 
-glimpse(Pre_df)
-glimpse(Post_df)
+# Creating a model matrix with the feature values, for the response variable Massive Transfusion
+x2 <- model.matrix(Massive.Transfusion ~. , Pre_df_Lasso2)[,-1]
+# Creating a vector with response values
+y2 <- Pre_df_Lasso2$Massive.Transfusion
+
+# Main loop to bootstrap Lasso classifier and store optimal predictors for each iteration.
+set.seed(123)
+for(i in 1:num_bootstraps) {
+  # Separate the data into two groups based on the value of 'Massive.Transfusion'.
+  # This helps in stratified sampling to address class imbalance.
+  indices_0 <- which(y2 == 0)
+  indices_1 <- which(y2 == 1)
+  
+  # Sample separately from each group to ensure representation of both classes in each sample.
+  # For the majority class (0), we sample the usual number minus the count of minority class.
+  sample_0 <- sample(indices_0, size = nrow(Pre_df_Lasso2) - 9, replace = TRUE)
+  # For the minority class (Massive Transfusions), we always sample 9 instances to ensure their presence.
+  # (as there are 9 instances in the original dataset)
+  sample_1 <- sample(indices_1, size = 9, replace = TRUE)
+  
+  # Combine the samples and creating an overall bootstrap sample
+  boot_indices <- c(sample_0, sample_1)
+  boot_x2 <- x2[boot_indices,]
+  boot_y2 <- y2[boot_indices]
+  
+  # Lasso Classification: 
+  # Fitting a Lasso model on the bootstrap sample. cv.glmnet automatically scales the input.
+  cv.lasso2 <- cv.glmnet(boot_x2, boot_y2, alpha = 1, family="binomial")
+  optimal_lambda2 <- cv.lasso2$lambda.min
+  
+  # Extracting coefficients at the optimal lambda
+  # Coefficients not equal to zero indicate selected variables
+  lasso_coefs2 <- coef(cv.lasso2, s = optimal_lambda2)
+  non_zero_coefs2 <- lasso_coefs2[lasso_coefs2[, 1] != 0, , drop = FALSE]
+  selected_vars_names2 <- row.names(non_zero_coefs2)[-1] # Excluding intercept
+  
+  # Storing names of selected variables
+  class_selected_variables[[i]] <- selected_vars_names2
+}
+
+# Analyzing the frequency of selection for each variable
+class_selected_vars_final <- unlist(class_selected_variables)
+class_selection_freq <- table(class_selected_vars_final) / num_bootstraps
+
+# Convert the table to a dataframe for easier handling, and sorting by frequency
+class_selection_df <- as.data.frame(class_selection_freq)
+names(class_selection_df) <- c("Variable", "Frequency")
+class_selection_df <- class_selection_df[order(-class_selection_df$Frequency),]
+
+# Finding variables with frequency greater than 80%
+class_final_predictors <- subset(class_selection_df, Frequency > 0.80)
+print(class_final_predictors)
+
+# The following predictors for Massive.Transfusion had a frequency of being in the final model > 80% (in order of frequency):
+#  - Pre_Hb
+#  - Transplant.Type
+#  - Pre_Platelets
+
+# INSERT FREQUENCY PLOT HERE
+
+# INSERT LOGISTIC REGRESSION SECTION HERE 
 
 
-###### Creating time to event variables 
-## Subtract death date from icu admission date to get accurate day of being alive
-## have to make sure they have same format
 
-# Convert ICU.Admission.Date.Time to Date format
-data$ICU.Admission.Date.Time <- as.Date(data$ICU.Admission.Date.Time)
+### LASSO CLASSIFIER WITH HAD.TRANSFUSION AS OUTCOME ###
 
-# Replace empty values with NA in DEATH_DATE
+# Creating a dataset without Massive.Transfusion and Total.24hr.RBC for this model
+Pre_df_Lasso3 <- Pre_df %>%
+  select(-Massive.Transfusion, -Total.24hr.RBC) %>%
+  mutate(Had.Transfusion = as.factor(Had.Transfusion))
+
+# Initializing a list to contain all the variables in the 'optimal' classification models. 
+trans_selected_variables <- list()
+
+# Creating a model matrix with the feature values, for the response variable Had.Transfusion
+x3 <- model.matrix(Had.Transfusion ~. , Pre_df_Lasso3)[,-1]
+# Creating a vector with response values
+y3 <- Pre_df_Lasso3$Had.Transfusion
+
+# Main loop 
+set.seed(123)
+for(i in 1:num_bootstraps) {
+  boot_indices3 <- sample(1:nrow(Pre_df_Lasso3), replace = TRUE)
+  boot_x3 <- x3[boot_indices3,]
+  boot_y3 <- y3[boot_indices3]
+  
+  # Fitting a Lasso model on the bootstrap sample
+  cv.lasso3 <- cv.glmnet(boot_x3, boot_y3, alpha = 1, family="binomial")
+  optimal_lambda3 <- cv.lasso3$lambda.min
+  
+  # Extracting coefficients at the optimal lambda
+  # Coefficients not equal to zero indicate selected variables
+  lasso_coefs3 <- coef(cv.lasso3, s = optimal_lambda3)
+  non_zero_coefs3 <- lasso_coefs3[lasso_coefs3[, 1] != 0, , drop = FALSE]
+  selected_vars_names3 <- row.names(non_zero_coefs3)[-1] # Excluding intercept
+  
+  # Storing names of selected variables
+  trans_selected_variables[[i]] <- selected_vars_names3
+}
+
+# Analyzing the frequency of selection for each variable
+trans_selected_vars_final <- unlist(trans_selected_variables)
+trans_selection_freq <- table(trans_selected_vars_final) / num_bootstraps
+
+# Convert the table to a dataframe for easier handling, and sorting by frequency
+trans_selection_df <- as.data.frame(trans_selection_freq)
+names(trans_selection_df) <- c("Variable", "Frequency")
+trans_selection_df <- trans_selection_df[order(-trans_selection_df$Frequency),]
+
+# Finding variables with frequency greater than 80%
+trans_final_predictors <- subset(trans_selection_df, Frequency > 0.80)
+print(trans_final_predictors)
+
+# The following predictors for Had.Transfusion had a frequency of being in the final model > 80% (in order of frequency):
+#  - Pre_Hb
+#  - ECLS_ECMO
+#  - Pulm_Other
+#  - Intra_Albumin.5...mL.
+#  - Intra_Crystalloid..mL
+#  - Type (Single Left Lung)
+#  - Pre_Platelets
+#  - BMI
+#  - Gender..male
+#  - Renal.Failure
+#  - Hypertension
+#  - ExVIVO.Lung.Perfusion
+#  - Coronary.Artery.Disease
+#  - ECLS_CPB
+#  - Type (Single Right Lung)
+#  - Liver.Disease
+#  - Transplant_Type
+#  - 
+
+# INSERT FREQUENCY PLOT HERE
+
+# INSERT LOGISTIC REGRESSION SECTION HERE 
+
+
+############################################
+#######            Q2             ##########                   
+############################################
+
+# Question 2: What is the impact of transfusion on patient outcomes, including mortality?
+
+
+
+###### Lets see which patient outcomes are highly correlated first so we can either to improve our models moving forward 
+
+
+# Select only the numeric columns from Post_df because corr plot only works for visualizing continuous variables
+# Either way those measurements we are interested in for q2 are all numerical until now
+numeric_cols <- Post_df %>%
+  select_if(is.numeric)
+
+# Calculate the correlation matrix
+cor_matrix <- cor(numeric_cols)
+
+# Visualize the correlation matrix
+corrplot::corrplot(cor_matrix, method = "color")
+
+
+#####Strong Positive Relationships (Correlation close to 1):
+  
+# Total.24hr.RBC and Intra_Packed.Cells have a strong positive correlation of approximately 0.97.
+# Total.24hr.RBC and Intra_Fresh.Frozen.Plasma have a strong positive correlation of approximately 0.82.
+# Intra_Packed.Cells and Intra_Fresh.Frozen.Plasma also have a strong positive correlation of approximately 0.86.
+#### packed red blood cells (pRBCs), are prepared from whole blood by removing plasma
+# Intra_Cryoprecipitate and Intra_Platelets have a strong positive correlation of approximately 0.87.
+# Hospital_LOS and Duration of ICU have strong correlation of 0.8
+
+#####Strong Negative Relationships (Correlation close to -1):
+  
+# PostDay1_PT and PostDay1_PTT have a strong negative correlation of approximately -0.43.
+# PostDay1_Creatinine and PostDay1_PTT have a moderate negative correlation of approximately -0.25
+
+
+####################################################
+# Preparing Post_df for Q2 and Investigating Collinearity ##
+####################################################
+
+
+# Remove those that have strong correlation or else they will confuse our regression models 
+# & group the different transfusion types into categories supported by the literature and remove the individuals componenets of the type of the transufison 
+# Intra_crystalloid is given as first-line to all these patients in general to prevent dehydration so won't consider it
+# Intra_albumin is also given for all patients during the surgery so won't assesss their impact on patient outcomes because all are given
+
+Post_df_1 <- Post_df %>%
+  mutate(
+    Plasma_Transfusion_Post = as.factor(ifelse(FFP.72hr.Total > 0 | Cryo.72hr.Total > 0 , TRUE, FALSE)),
+    Blood_Transfusion_Post = as.factor(ifelse(Total.24hr.RBC > 0 | Intra_Packed.Cells > 0, TRUE, FALSE)),
+    Platelet_Transfusion_Post = as.factor(ifelse(Plt.72hr.Total > 0 | Intra_Platelets > 0, TRUE, FALSE))) %>% 
+  mutate(
+    Had.Transfusion_Post = as.factor(Plasma_Transfusion_Post == TRUE | Blood_Transfusion_Post == TRUE | Platelet_Transfusion_Post == TRUE))%>%
+  mutate( 
+    Plasma_Transfusion_Intra = as.factor(ifelse(Intra_Fresh.Frozen.Plasma > 0 | Intra_Cryoprecipitate > 0, TRUE, FALSE)),
+  Blood_Transfusion_Intra = as.factor(ifelse( Intra_Packed.Cells > 0, TRUE, FALSE)),
+  Platelet_Transfusion_Intra = as.factor(ifelse(Intra_Platelets > 0, TRUE, FALSE))) %>% 
+    mutate(
+      Had.Transfusion_Intra = as.factor(Plasma_Transfusion_Intra == TRUE | Blood_Transfusion_Intra == TRUE | Platelet_Transfusion_Intra == TRUE)
+    ) %>% 
+  select(-c(Intra_Albumin.5...mL., Intra_Crystalloid..mL.,
+          Intra_Cryoprecipitate,Duration.of.ICU.Stay..days., PostDay1_PTT, FFP.72hr.Total, Cryo.72hr.Total, Total.24hr.RBC, Plt.72hr.Total, Intra_Packed.Cells, Intra_Fresh.Frozen.Plasma, Intra_Platelets))
+
+######### NOw do the correlation matrix again; keep in mind it won't show the new transufsion categories because theyre factors
+numeric_cols1 <- Post_df_1 %>%
+  select_if(is.numeric)
+
+# Calculate the correlation matrix
+cor_matrix1 <- cor(numeric_cols1)
+
+# Visualize the correlation matrix
+corrplot::corrplot(cor_matrix1, method = "color")
+
+
+## To assess mortality: use the death date to make a response variable is binary, such as (1 for death and 0 for survival) and use the had transfusion variable to assess relationship of transfusion on likelihood of death
+## Let's add the death datefor assessing mortality outcome 
+
+# Replace empty values with NA in DEATH_DATE for it be processed easily
 data$DEATH_DATE[data$DEATH_DATE == ""] <- NA
 
 # Convert DEATH_DATE to Date format
 data$DEATH_DATE <- as.Date(data$DEATH_DATE, format = "%d-%b-%Y")
 
-data$ICU_Discharge_Date.Time <- as.Date(data$ICU_Discharge_Date.Time)
+
+# Add these variables to Post_df_1
+Post_df_1$DEATH_DATE <- data$DEATH_DATE 
+  
+# Create a binary death variable as a factor
+Post_df_1$Death_Binary <- factor(ifelse(!is.na(Post_df_1$DEATH_DATE), "1", "0"))
+
+# View the levels of the Death_Binary variable
+levels(Post_df_1$Death_Binary)
+
+
+############# NOW LET'S DO ASSESS IMPACT OF TRANFUSIONS ON PATIENT OUTCOMES###############
+
+
+##### We can assess if post transfusion impacts all post measurement patient outcomes , hospital LOS, death, etc..
+
+glimpse(Post_df_1)
+
+# List of actual outcomes that are continuous and categorical 
+outcomes_cont <- c("PostDay1_Hb", "PostDay1_Hct", "PostDay1_Platelets", "PostDay1_PT", "PostDay1_Creatinine", "HOSPITAL_LOS")
+
+outcomes_categ <- c("ALIVE_30DAYS_YN", "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN", "Death_Binary")
+
+# Initialize a list to store regression models and summaries
+regression_models <- list()
+
+# Loop through each continuous outcome for linear regression
+for (outcome in outcomes_cont) {
+  linear_model <- lm(paste(outcome, "~ Plasma_Transfusion_Post + Platelet_Transfusion_Post + Blood_Transfusion_Post + Had.Transfusion_Post"), data = Post_df_1)
+  regression_models[[paste(outcome, "_linear")]] <- summary(linear_model)
+}
+
+# Loop through each binary outcome for logistic regression
+for (outcome in outcomes_categ) {
+  logistic_model <- glm(paste(outcome, "~ Plasma_Transfusion_Post + Platelet_Transfusion_Post + Blood_Transfusion_Post + Had.Transfusion_Post"), 
+                        data = Post_df_1, family = binomial)
+  regression_models[[paste(outcome, "_logistic")]] <- summary(logistic_model)
+}
+
+# View the summaries for all regression models
+for (model_summary in regression_models) {
+  print(model_summary)
+}
+
+
+############ We can also check impact of BOTH intra and post trasnfusion on mortality 
+
+# Define the outcome variable (e.g., mortality)
+outcome_variable <- "Death_Binary"  
+
+# Logistic regression model
+logistic_model <- glm(paste(outcome_variable, "~ Plasma_Transfusion_Post + Blood_Transfusion_Post + Platelet_Transfusion_Post + Plasma_Transfusion_Intra + Blood_Transfusion_Intra + Platelet_Transfusion_Intra"), 
+                      data = Post_df_1, family = binomial)
+
+# Summary of the logistic regression model
+summary(logistic_model)
+
+
+#################### ASSESS IMPACT OF TRANSUFION ON MORTALITY################################
+
+## For survival analysis and having time to event, we will utilize the ICU admission and discharge dates 
+## Let's add the death date, icu admission, and icu discharge variables which will be helpful in our downstream analysis for assessing mortality outcome 
+
+# Convert ICU.Admission.Date.Time to Date format
+data$ICU.Admission.Date.Time <- as.Date(data$ICU.Admission.Date.Time)
+
+# Convert ICU.Admission.Date.Time to Date format
+data$ICU.Discharge.Date.Time <- as.Date(data$ICU.Discharge.Date.Time)
+
+
+Post_df_1$ICU.Admission.Date.Time <- data$ICU.Admission.Date.Time 
+
+Post_df_1$ICU.Admission.Date.Time <- data$ICU.Discharge.Date.Time
+
+# Load necessary libraries
+library(survival)
+library(dplyr)
+
+# Filter patients who experienced death
+death_patients <- Post_df_1 %>%
+  filter(Death_Binary == 1)
+
+# Calculate event times for patients who died
+death_patients$Event_Time <- as.numeric(difftime(death_patients$DEATH_DATE, death_patients$ICU.Admission.Date.Time, units = "days"))
+
+# Filter and preprocess censored patients
+censored_patients <- Post_df_1 %>%
+  filter(Death_Binary == 0) %>%
+  filter(!is.na(ICU.Discharge.Date))  # Filter out patients with missing discharge dates
+
+# Calculate censored times for patients who survived
+censored_patients$Censored_Time <- as.numeric(difftime(censored_patients$ICU.Discharge.Date, censored_patients$ICU.Admission.Date.Time, units = "days"))
+
+# Combine the data for analysis
+analysis_data <- rbind(death_patients, censored_patients)
+
+# Fit a Cox proportional hazards regression model
+cox_model <- coxph(Surv(Event_Time, Death_Binary) ~ Plasma_Transfusion + Platelet_Transfusion + Blood_Transfusion + Had.Transfusion + Age + BMI, data = analysis_data)
+
+# Summarize the model
+summary(cox_model)
+
+
+
+
+
+########################################### TO BE DELETED BELOW THIS ####
+
+# Load necessary libraries
+library(survival)
+
+# Had.Transfusion - binary (1 if had a transfusion, 0 otherwise)
+# ICU.Admission.Date.Time - start date
+# DEATH_DATE - if the patient died, this should be the date of death
+# If DEATH_DATE is NA, it means the patient was censored (did not die during the study or lost to follow-up)
+
+
+
+
+
+###### ANALYZING THE 120 DAY SURVIVAL ######### 
+# Assuming you have the ICU admission date (ICU_Admission_Date) 
+# and the death date (Death_Date) in your dataframe
+
+library(survival)
+
+# Convert the date columns to Date objects
+Post_df$ICU_Admission_Date <- as.Date(Post_df$ICU_Admission_Date)
+Post_df$Death_Date <- as.Date(Post_df$Death_Date)
+
+# Calculate the days until death or 120 days
+Post_df$Days_Until_Event <- ifelse(is.na(Post_df$Death_Date),
+                                   120, 
+                                   as.numeric(Post_df$Death_Date - Post_df$ICU_Admission_Date))
+
+# Censor those who survived more than 120 days
+Post_df$Status <- ifelse(Post_df$Days_Until_Event >= 120, 0, 1)
+
+# Create the survival object
+surv_obj <- Surv(time = Post_df$Days_Until_Event, event = Post_df$Status)
+
+# You can now use this surv_obj for survival analysis, like Cox regression
+# cox_model <- coxph(surv_obj ~ predictor_variables, data = Post_df)
+
+
+#############################################################
+### To be deleted because done before variable selection ####
+##############################################################
+
+###### Creating time to event variables 
+## Subtract death date from icu admission date to get accurate day of being alive
+## have to make sure they have same format
+
+
+
+
+# Combining the three "Alive Status" variables into one to aid downstream analysis. 
+Post_df_1 <- Post_df_1 %>%
+  mutate(Minimum_Alive_Days = case_when(
+    ALIVE_12MTHS_YN == "Y" ~ 365,
+    ALIVE_90DAYS_YN == "Y" ~ 90,
+    ALIVE_30DAYS_YN == "Y" ~ 30,
+    TRUE ~ 0
+  ))
+glimpse(Post_df_1)
+
 
 # The study period will be selected based on the intial icu admission date and the last death date 
 # it is 2018-01-05 and 2020-01-22 
@@ -432,7 +1029,7 @@ cox_model_enhanced <- coxph(Surv(time = Days_Alive, event = Status) ~
                               COPD + Cystic.Fibrosis + Interstitial.Lung.Disease +
                               Pulm_Other + Coronary.Artery.Disease + Hypertension +
                               Renal.Failure + Stroke.CVA + Liver.Disease + 
-                              ExVIVO.Lung.Perfusion + Blood.Loss, data = Post_df)
+                              ExVIVO.Lung.Perfusion + Blood.Loss, data = Post_df_1)
 
 
 plot(survfit(cox_model_enhanced), fun='cloglog') # looks good, proportional and no crossing.
@@ -443,8 +1040,7 @@ summary(cox_model_enhanced) #doesn't show any statistically significant predicto
 
 ########### Lets include massive transfusion & remove rbc and intracellular in a new dataset
 Post_df_MT <- Post_df %>% 
-  select(c(-Total.24hr.RBC), (Intra_Packed.Cells))
-
+  select(-c(Total.24hr.RBC))
 
 
 # Add this time to event variable (Days_Alive) to Post_df
@@ -527,7 +1123,7 @@ summary(cox_model_all_year)
 
 
 
-######### lets use the dataset that include massice transfuiion  
+######### lets use the dataset that include massive transfuiion  
 
 # Add Time_to_event to Post_df
 Post_df_MT$Time_to_event_year <- data$Time_to_event
@@ -538,7 +1134,7 @@ Post_df_MT$Status_for_year <- ifelse(data$Time_to_event >= 365, 0, 1)
 
 # Cox proportional hazards model
 cox_model_year_transfusion <- coxph(Surv(time = Time_to_event_year, event = Status_for_year) ~ Massive.Transfusion, data = Post_df_MT)
-summary(cox_model_year_transfusion) # still no signifiant results 
+summary(cox_model_year_transfusion) # still no significant results 
 
 # Create a survival object
 surv_object2 <- Surv(time = Post_df$Time_to_event_year, event = Post_df$Status_for_year)
@@ -554,6 +1150,11 @@ ggsurvplot(km_fit2,
            ylab = "Survival Probability")
 ####crosses or line on the survival curves represent  the censored data points
 ### in this case here, they represent those who were still alive at the end of the one-year study period (365 days), or died after the one-year study period
+
+
+
+
+
 
 
 
