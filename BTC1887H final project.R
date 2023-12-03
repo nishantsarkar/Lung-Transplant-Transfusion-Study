@@ -527,7 +527,7 @@ ggplot(Merged_Frame, aes(x = Liver.Disease, y = Total.24hr.RBC)) +
   ylab("Average Total 24hr RBC Transfused (units)")
 
 
-# Conclusion conclusion blah blah blah
+# (PUT A BIT OF A CONCLUSION HERE FOR THE MOST SIGNIFICANT FINDINGS)
 
 
 
@@ -613,9 +613,33 @@ print(selected_predictors)
 #  - Pre_Platelets
 #  - ExVIVO.Lung.Perfusion
 
-# INSERT FREQUENCY PLOT HERE
+# Creating a frequency plot to visualize the frequency at which each predictor was chosen.
+lasso1plot <- ggplot(variable_selection_df, aes(x = reorder(Variable, Frequency), y = Frequency)) + 
+                geom_bar(stat = "identity") +
+                geom_hline(yintercept = 0.8, linetype = "dashed", color = "red", linewidth = 0.75) +
+                coord_flip() + 
+                theme_minimal() + 
+                labs(x = "Predictors", y = "Frequency of Inclusion in Best Model", title = "Frequency of Predictors: Total.24hr.RBC Model")
 
-# INSERT LINEAR REGRESSION SECTION HERE - WILL DO ONCE WE COMBINE THE CODE
+
+# The problem with the above approach is that it does not result in a meaningful single set
+# of model weights that can be used to assess the relative importance of the "Best" predictors,
+# since only each predictor's frequency of inclusion in the best model is known. 
+
+# To circumvent this problem, the predictors with frequencies > 80% can be fit into a regression
+# model with Total.24hr.RBC as outcome, and the beta coefficients can be assessed. Note that the
+# resulting p-values cannot be interpreted normally as candidate predictors were chosen based
+# on the data-driven bootstrapping process, which can introduce bias; only the beta coefficients
+# are particularly informative. 
+
+# Fitting a linear regression model with the most frequent predictors: 
+linreg1 <- lm(Total.24hr.RBC ~ Pre_Hb + Transplant_Type + ECLS_ECMO + 
+             Intra_Albumin.5...mL. + Gender..male. + Intra_Crystalloid..mL. +
+             ECLS_CPB + Pre_Platelets + ExVIVO.Lung.Perfusion, 
+             data = Pre_df)
+summary(linreg1)
+# Please see report for analysis of results. 
+
 
 
 
@@ -683,12 +707,25 @@ print(class_final_predictors)
 
 # The following predictors for Massive.Transfusion had a frequency of being in the final model > 80% (in order of frequency):
 #  - Pre_Hb
-#  - Transplant.Type
+#  - Transplant_Type
 #  - Pre_Platelets
 
-# INSERT FREQUENCY PLOT HERE
+# Creating a frequency plot to visualize the frequency at which each predictor was chosen.
+lasso2plot <- ggplot(class_selection_df, aes(x = reorder(Variable, Frequency), y = Frequency)) + 
+  geom_bar(stat = "identity") +
+  geom_hline(yintercept = 0.8, linetype = "dashed", color = "red", linewidth = 0.75) +
+  coord_flip() + 
+  theme_minimal() + 
+  labs(x = "Predictors", y = "Frequency of Inclusion in Best Model", title = "Frequency of Predictors: Massive.Transfusion Model")
 
-# INSERT LOGISTIC REGRESSION SECTION HERE 
+
+# As above, fitting a logistic regression model with the most frequent predictors: 
+logreg2 <- glm(Massive.Transfusion ~ Pre_Hb + Transplant_Type + Pre_Platelets, 
+               family = binomial, 
+               data = Pre_df)
+summary(logreg2)
+# Please see report for analysis of results. 
+
 
 
 
@@ -759,12 +796,23 @@ print(trans_final_predictors)
 #  - Type (Single Right Lung)
 #  - Liver.Disease
 #  - Transplant_Type
-#  - 
 
-# INSERT FREQUENCY PLOT HERE
+# Creating a frequency plot to visualize the frequency at which each predictor was chosen.
+lasso3plot <- ggplot(trans_selection_df, aes(x = reorder(Variable, Frequency), y = Frequency)) + 
+  geom_bar(stat = "identity") +
+  geom_hline(yintercept = 0.8, linetype = "dashed", color = "red", linewidth = 0.75) +
+  coord_flip() + 
+  theme_minimal() + 
+  labs(x = "Predictors", y = "Frequency of Inclusion in Best Model", title = "Frequency of Predictors: Had.Transfusion Model")
 
-# INSERT LOGISTIC REGRESSION SECTION HERE 
 
+# As above, fitting a logistic regression model with the most frequent predictors: 
+logreg3 <- glm(Had.Transfusion ~ Pre_Hb + ECLS_ECMO + Pulm_Other + Intra_Albumin.5...mL. + 
+                 Intra_Crystalloid..mL. + Type + Pre_Platelets + BMI + Gender..male. + 
+                 Renal.Failure + Hypertension + ExVIVO.Lung.Perfusion + Coronary.Artery.Disease + 
+                 ECLS_CPB + Liver.Disease + Transplant_Type, family = binomial, data = Pre_df)
+summary(logreg3)
+# Please see report for analysis of results. 
 
 
 
