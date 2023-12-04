@@ -920,7 +920,34 @@ for (model_summary in regression_models) {
   print(model_summary)
 }
 
+### ENsuring assumptions are right
+for (outcome in outcomes_cont) {
+  linear_model <- lm(paste(outcome, "~ Total.24hr.RBC"), data = Post_df_1)
+  plot(linear_model$fitted.values, residuals(linear_model), main=paste("Residuals vs Fitted for", outcome), xlab="Fitted Values", ylab="Residuals")
+  abline(h=0, col="red")
+}
 
+for (outcome in outcomes_cont) {
+  linear_model <- lm(paste(outcome, "~ Total.24hr.RBC"), data = Post_df_1)
+  qqnorm(residuals(linear_model))
+  qqline(residuals(linear_model), col = "red")
+  title()
+}
+
+
+### FOr categorical outcomes
+for (outcome in outcomes_categ) {
+  logistic_model <- glm(paste(outcome, "~ Total.24hr.RBC"), 
+                        data = Post_df_1, family = binomial)
+  print(broom::glance(logistic_model))
+}
+
+# Results 
+# For ALIVE_30DAYS_YN: The model has a relatively high null deviance, suggesting that the predictor (Total.24hr.RBC) may not explain a significant portion of the variance in the outcome.
+
+# For ALIVE_90DAYS_YN, ALIVE_12MTHS_YN, and Death_Binary: Similar interpretation as ALIVE_30DAYS_YN, with the null and residual deviances indicating the model's explanatory power.
+
+# For Need.for.reoperation.for.bleeding.within.24h: This model also shows similar characteristics, with null and residual deviances indicating the extent of variance explained.
 
 
 ######################## For Massive.Transfusion 
@@ -944,6 +971,33 @@ for (outcome in outcomes_categ) {
 for (model_summary in regression_models) {
   print(model_summary)
 }
+
+
+
+# Checking assumptions: 
+### FOr categorical outcomes
+for (outcome in outcomes_categ) {
+  logistic_model <- glm(paste(outcome, "~ Massive.Transfusion"), 
+                        data = Post_df_1, family = binomial)
+  print(broom::glance(logistic_model))
+}
+
+
+### ENsuring assumptions are right
+for (outcome in outcomes_cont) {
+  linear_model <- lm(paste(outcome, "~ Massive.Transfusion"), data = Post_df_1)
+  plot(linear_model$fitted.values, residuals(linear_model), main=paste("Residuals vs Fitted for", outcome), xlab="Fitted Values", ylab="Residuals")
+  abline(h=0, col="red")
+}
+
+for (outcome in outcomes_cont) {
+  linear_model <- lm(paste(outcome, "~ Massive.Transfusion"), data = Post_df_1)
+  qqnorm(residuals(linear_model))
+  qqline(residuals(linear_model), col = "red")
+  title()
+}
+
+
 
 
 #################### ASSESS IMPACT OF TRANSUFION ON MORTALITY USING Surival ANalysis################################
@@ -998,13 +1052,14 @@ cox.zph(cox_model2)
 plot(survfit(cox_model2), fun='cloglog') 
 ######################################################################
 # Fit a survival model using Total.24hr.RBC including other potential covariates
-cox_model3 <- coxph(Surv(Survival_Time, Status)~ Total.24hr.RBC + Type +Gender..male. + Age + BMI + COPD + Cystic.Fibrosis + Interstitial.Lung.Disease + Pulm_Other + Coronary.Artery.Disease + 
+cox_model3 <- coxph(Surv(Survival_Time, Status)~ Total.24hr.RBC + Type +Gender..male. + Age + BMI + COPD + Cystic.Fibrosis + Coronary.Artery.Disease + 
                       Hypertension + Renal.Failure + Stroke.CVA + Liver.Disease,
                     data = Post_df_1)
 summary(cox_model3)
 # Check proportional hazards assumption
 cox.zph(cox_model3)
 plot(survfit(cox_model3), fun='cloglog')
+
 
 library(survminer)
 # Grouping Total.24hr.RBC into categories into regular transfusin, massive (10-20 units), and ultra-massive 20+ units 
