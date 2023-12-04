@@ -276,22 +276,26 @@ View(Pre_df)
 Post_df <- filter70_data[c("Type", "Gender..male.", "Age", "BMI", "COPD", "Cystic.Fibrosis", 
                            "Interstitial.Lung.Disease", "Pulm_Other", "Coronary.Artery.Disease", 
                            "Hypertension", "Renal.Failure", "Stroke.CVA", "Liver.Disease", 
-                           "ExVIVO.Lung.Perfusion","ALIVE_30DAYS_YN", "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN", "PostDay1_Hb", "PostDay1_Hct", "PostDay1_Creatinine",
-                           "PostDay1_Platelets", "Total.24hr.RBC", "Intra_Albumin.5...mL.", "Intra_Crystalloid..mL.", 
-                           "Intra_Packed.Cells", "Intra_Fresh.Frozen.Plasma", "Intra_Cryoprecipitate", 
-                           "Intra_Platelets", "FFP.72hr.Total", 
-                           "Plt.72hr.Total", "Cryo.72hr.Total", "PostDay1_PT", "PostDay1_PTT", "HOSPITAL_LOS", "Duration.of.ICU.Stay..days.")]
+                           "ExVIVO.Lung.Perfusion","ALIVE_30DAYS_YN", "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN", "RBC.72hr.Total", "FFP.72hr.Total", 
+                           "Plt.72hr.Total", "Cryo.72hr.Total", "HOSPITAL_LOS", "Duration.of.ICU.Stay..days.", "Massive.Transfusion", "Total.24hr.RBC", "Need.for.reoperation.for.bleeding.within.24h")]
 
 
-View(Post_df)
-glimpse(filter70_data)
+ ## Why were these variables selected? 
+# The "intra" measurements are removed because they are taken into consideration when measurement the Total amount later 
+# Except for crystalloid and albumin, they are not included as part of FFP, Platelets, or RBC 
+# However, we are not interested in them really: Intra_crystalloid is like a saline solution and is given as first-line to all these patients in general to prevent dehydration so won't consider it
+# Intra_albumin is also given for all patients during the surgery so won't assesss their impact on patient outcomes because all are given
+# "Intravenous albumin is commonly administered among noncardiac surgeries with significant inter-institutional variability" 
+# Massive Transfusion Protocol (MTP): In the context of massive transfusions, the first 24 hours are critical, and there may be protocols that require reporting or analyzing this data separately.
+# Why is Total.24hr.RBC higher than RBC.72hr.Total? From reviwing the literature and the dataset: 
+# there might have been a massive transfusion event within the first 24 hours after the 72 hr that required more RBCs than the following days.
+#  or the totals might be aggregated differently. The "total24RBC" might aggregate data from multiple sources or points, whereas the "72hr Total" might not.
+
 
 # Combining the two "Transplant Type" variables into one to aid downstream analysis. 
 Pre_df <- Pre_df %>% 
   mutate(Transplant_Type = ifelse(Redo.Lung.Transplant == TRUE, "SECOND", "FIRST")) %>%
   select(-First.Lung.Transplant, -Redo.Lung.Transplant)
-
-
 
 ### IMPUTATION ###
 
@@ -349,6 +353,15 @@ print(vif_results_1.2)
 # Multicollinearity is no longer a big issue in Pre_df with these removals.
 Pre_df <- Pre_df_1
 
+
+# Fitting a linear model with '24hr RBC' as the dependent variable, for Post_df. 
+model2 <- lm(Total.24hr.RBC ~ ., data=Post_df)
+# Calculating Variance Inflation Factor (VIF)
+vif_results <- vif(model2)
+# Variables with high collinearity are those with VIF > 5. This includes:
+# Duration.of.ICU.Stay..days. - this will be removed because it is highly correlaed with HOSPITAL_LOS
+# Plt.72hr.Total - this will be removed after creating a transfusion variable which takes into consideration whether patient had any type of transufsion
+# RBC.72hr.Total - this will be removed after creating a transfusion variable which takes into consideration whether patient had any type of transufsion
 
 ###############################
 #  EXPLORATORY DATA ANALYSIS  #                   
@@ -736,64 +749,54 @@ print(trans_final_predictors)
 
 # Question 2: What is the impact of transfusion on patient outcomes, including mortality?
 
+########### INVESTIGATING COLLINEARITY AMONG OUR VARIABLES ###############
 
-
-###### Lets see which patient outcomes are highly correlated first so we can either to improve our models moving forward 
-
-
-# Select only the numeric columns from Post_df because corr plot only works for visualizing continuous variables
+###### Lets see which of the continuous patient outcomes are highly correlated first so we can either to improve our models moving forward 
+# Select only the continuous (numeric) columns from Post_df because corr plot only works for visualizing continuous variables
 # Either way those measurements we are interested in for q2 are all numerical until now
 numeric_cols <- Post_df %>%
   select_if(is.numeric)
 
 # Calculate the correlation matrix
 cor_matrix <- cor(numeric_cols)
+cor_matrix
 
 # Visualize the correlation matrix
 corrplot::corrplot(cor_matrix, method = "color")
 
 
 #####Strong Positive Relationships (Correlation close to 1):
-  
-# Total.24hr.RBC and Intra_Packed.Cells have a strong positive correlation of approximately 0.97.
-# Total.24hr.RBC and Intra_Fresh.Frozen.Plasma have a strong positive correlation of approximately 0.82.
-# Intra_Packed.Cells and Intra_Fresh.Frozen.Plasma also have a strong positive correlation of approximately 0.86.
-#### packed red blood cells (pRBCs), are prepared from whole blood by removing plasma
-# Intra_Cryoprecipitate and Intra_Platelets have a strong positive correlation of approximately 0.87.
+# Blood transfusions like plt and rbc are highly correlated too becuase one might imply we need the other but 
+# for the sake of our research its important to have both so we will keep them
 # Hospital_LOS and Duration of ICU have strong correlation of 0.8
 
 #####Strong Negative Relationships (Correlation close to -1):
-  
 # PostDay1_PT and PostDay1_PTT have a strong negative correlation of approximately -0.43.
 # PostDay1_Creatinine and PostDay1_PTT have a moderate negative correlation of approximately -0.25
 
 
 ####################################################
-# Preparing Post_df for Q2 and Investigating Collinearity ##
+########### Preparing Post_df for Q2 ##############
 ####################################################
 
 
-# Remove those that have strong correlation or else they will confuse our regression models 
-# & group the different transfusion types into categories supported by the literature and remove the individuals componenets of the type of the transufison 
-# Intra_crystalloid is given as first-line to all these patients in general to prevent dehydration so won't consider it
-# Intra_albumin is also given for all patients during the surgery so won't assesss their impact on patient outcomes because all are given
+# We will base our primary analysis by using RBC.Total.24hr because the 72 total span variables is based off of columns that have more than 80 missingess.
+# However, to take into consideration the other types of transfusion, we will create a variable called Had.Transfusion which sees how any type of transfusin, 
+# whether its blood, platelet, or plasma has any impact on patient outcomes 
 
+
+# Remove strongly correlated patient outcomes  or else they will confuse our regression models 
+#  Different transfusion type binary categories will be made based on literature evidence and individual components will be removed 
+# For example, FFP and Cryo are both plasma components and fall under plasma transfusion 
 Post_df_1 <- Post_df %>%
   mutate(
-    Plasma_Transfusion_Post = as.factor(ifelse(FFP.72hr.Total > 0 | Cryo.72hr.Total > 0 , TRUE, FALSE)),
-    Blood_Transfusion_Post = as.factor(ifelse(Total.24hr.RBC > 0 | Intra_Packed.Cells > 0, TRUE, FALSE)),
-    Platelet_Transfusion_Post = as.factor(ifelse(Plt.72hr.Total > 0 | Intra_Platelets > 0, TRUE, FALSE))) %>% 
+    Plasma_Transfusion = as.factor(ifelse(FFP.72hr.Total > 0 | Cryo.72hr.Total > 0 , TRUE, FALSE)),
+    Blood_Transfusion = as.factor(ifelse(RBC.72hr.Total > 0,  TRUE, FALSE)),
+    Platelet_Transfusion = as.factor(ifelse(Plt.72hr.Total > 0, TRUE, FALSE))) %>% 
   mutate(
-    Had.Transfusion_Post = as.factor(Plasma_Transfusion_Post == TRUE | Blood_Transfusion_Post == TRUE | Platelet_Transfusion_Post == TRUE))%>%
-  mutate( 
-    Plasma_Transfusion_Intra = as.factor(ifelse(Intra_Fresh.Frozen.Plasma > 0 | Intra_Cryoprecipitate > 0, TRUE, FALSE)),
-  Blood_Transfusion_Intra = as.factor(ifelse( Intra_Packed.Cells > 0, TRUE, FALSE)),
-  Platelet_Transfusion_Intra = as.factor(ifelse(Intra_Platelets > 0, TRUE, FALSE))) %>% 
-    mutate(
-      Had.Transfusion_Intra = as.factor(Plasma_Transfusion_Intra == TRUE | Blood_Transfusion_Intra == TRUE | Platelet_Transfusion_Intra == TRUE)
-    ) %>% 
-  select(-c(Intra_Albumin.5...mL., Intra_Crystalloid..mL.,
-          Intra_Cryoprecipitate,Duration.of.ICU.Stay..days., PostDay1_PTT, FFP.72hr.Total, Cryo.72hr.Total, Total.24hr.RBC, Plt.72hr.Total, Intra_Packed.Cells, Intra_Fresh.Frozen.Plasma, Intra_Platelets))
+    Had.Transfusion = as.factor(Plasma_Transfusion == TRUE | Blood_Transfusion == TRUE | Platelet_Transfusion == TRUE))%>% 
+  select(-c(Duration.of.ICU.Stay..days., FFP.72hr.Total, Cryo.72hr.Total, RBC.72hr.Total, Plt.72hr.Total))
+
 
 ######### NOw do the correlation matrix again; keep in mind it won't show the new transufsion categories because theyre factors
 numeric_cols1 <- Post_df_1 %>%
@@ -801,14 +804,48 @@ numeric_cols1 <- Post_df_1 %>%
 
 # Calculate the correlation matrix
 cor_matrix1 <- cor(numeric_cols1)
+cor_matrix1
 
 # Visualize the correlation matrix
 corrplot::corrplot(cor_matrix1, method = "color")
 
+# Now everything seems to be fine and no extreme correlation observed (no > 0.8)
 
-## To assess mortality: use the death date to make a response variable is binary, such as (1 for death and 0 for survival) and use the had transfusion variable to assess relationship of transfusion on likelihood of death
-## Let's add the death datefor assessing mortality outcome 
 
+###### Let's visualize the transfuion types and calculate the proportion of patients hwo had it: 
+library(ggplot2)
+library(tidyr)
+
+
+# Reshape data for plotting
+long_format <- Post_df_1 %>%
+  select(Plasma_Transfusion, Blood_Transfusion, Platelet_Transfusion, Had.Transfusion) %>%
+  pivot_longer(cols = everything(), names_to = "Transfusion_Type", values_to = "Status")
+
+# Plotting
+ggplot(long_format, aes(x = Transfusion_Type, fill = Status)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Transfusion Status Distribution",
+       x = "Type of Transfusion",
+       y = "Count",
+       fill = "Status") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2")
+
+
+# Calculating frequencies and percentages
+frequency_table <- long_format %>%
+  group_by(Transfusion_Type, Status) %>%
+  summarise(Frequency = n()) %>%
+  mutate(Percentage = round((Frequency / sum(Frequency)) * 100, 1)) %>%
+  arrange(Transfusion_Type, Status)
+
+# Displaying the frequency table
+print(frequency_table)
+
+
+
+##### To assess mortality: use the death date to make a response variable is binary, such as (1 for death and 0 for survival) and use the had transfusion variable to assess relationship of transfusion on likelihood of death
 # Replace empty values with NA in DEATH_DATE for it be processed easily
 data$DEATH_DATE[data$DEATH_DATE == ""] <- NA
 
@@ -828,28 +865,28 @@ levels(Post_df_1$Death_Binary)
 
 ############# NOW LET'S DO ASSESS IMPACT OF TRANFUSIONS ON PATIENT OUTCOMES###############
 
-
-##### We can assess if post transfusion impacts all post measurement patient outcomes , hospital LOS, death, etc..
+################# Had.Transfusion in General
+##### We can assess if transfusion binary variabe impacts all post measurement patient outcomes , hospital LOS, death, etc..
 
 glimpse(Post_df_1)
 
 # List of actual outcomes that are continuous and categorical 
-outcomes_cont <- c("PostDay1_Hb", "PostDay1_Hct", "PostDay1_Platelets", "PostDay1_PT", "PostDay1_Creatinine", "HOSPITAL_LOS")
+outcomes_cont <- c("HOSPITAL_LOS")
 
-outcomes_categ <- c("ALIVE_30DAYS_YN", "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN", "Death_Binary")
+outcomes_categ <- c("ALIVE_30DAYS_YN", "ALIVE_90DAYS_YN", "ALIVE_12MTHS_YN", "Death_Binary", "Need.for.reoperation.for.bleeding.within.24h")
 
 # Initialize a list to store regression models and summaries
 regression_models <- list()
 
 # Loop through each continuous outcome for linear regression
 for (outcome in outcomes_cont) {
-  linear_model <- lm(paste(outcome, "~ Plasma_Transfusion_Post + Platelet_Transfusion_Post + Blood_Transfusion_Post + Had.Transfusion_Post"), data = Post_df_1)
+  linear_model <- lm(paste(outcome, "~  Had.Transfusion"), data = Post_df_1)
   regression_models[[paste(outcome, "_linear")]] <- summary(linear_model)
 }
 
 # Loop through each binary outcome for logistic regression
 for (outcome in outcomes_categ) {
-  logistic_model <- glm(paste(outcome, "~ Plasma_Transfusion_Post + Platelet_Transfusion_Post + Blood_Transfusion_Post + Had.Transfusion_Post"), 
+  logistic_model <- glm(paste(outcome, "~ Had.Transfusion"), 
                         data = Post_df_1, family = binomial)
   regression_models[[paste(outcome, "_logistic")]] <- summary(logistic_model)
 }
@@ -860,303 +897,195 @@ for (model_summary in regression_models) {
 }
 
 
-############ We can also check impact of BOTH intra and post trasnfusion on mortality 
 
-# Define the outcome variable (e.g., mortality)
-outcome_variable <- "Death_Binary"  
+######################## For Total.24hr.RBC
+# Initialize a list to store regression models and summaries
+regression_models <- list()
 
-# Logistic regression model
-logistic_model <- glm(paste(outcome_variable, "~ Plasma_Transfusion_Post + Blood_Transfusion_Post + Platelet_Transfusion_Post + Plasma_Transfusion_Intra + Blood_Transfusion_Intra + Platelet_Transfusion_Intra"), 
-                      data = Post_df_1, family = binomial)
+# Loop through each continuous outcome for linear regression
+for (outcome in outcomes_cont) {
+  linear_model <- lm(paste(outcome, "~ Total.24hr.RBC"), data = Post_df_1)
+  regression_models[[paste(outcome, "_linear")]] <- summary(linear_model)
+}
+glimpse(Post_df_1)
+# Loop through each binary outcome for logistic regression
+for (outcome in outcomes_categ) {
+  logistic_model <- glm(paste(outcome, "~ Total.24hr.RBC"), 
+                        data = Post_df_1, family = binomial)
+  regression_models[[paste(outcome, "_logistic")]] <- summary(logistic_model)
+}
 
-# Summary of the logistic regression model
-summary(logistic_model)
+# View the summaries for all regression models
+for (model_summary in regression_models) {
+  print(model_summary)
+}
 
 
-#################### ASSESS IMPACT OF TRANSUFION ON MORTALITY################################
+
+
+######################## For Massive.Transfusion 
+# Initialize a list to store regression models and summaries
+regression_models <- list()
+
+# Loop through each continuous outcome for linear regression
+for (outcome in outcomes_cont) {
+  linear_model <- lm(paste(outcome, "~ Massive.Transfusion"), data = Post_df_1)
+  regression_models[[paste(outcome, "_linear")]] <- summary(linear_model)
+}
+glimpse(Post_df_1)
+# Loop through each binary outcome for logistic regression
+for (outcome in outcomes_categ) {
+  logistic_model <- glm(paste(outcome, "~ Massive.Transfusion"), 
+                        data = Post_df_1, family = binomial)
+  regression_models[[paste(outcome, "_logistic")]] <- summary(logistic_model)
+}
+
+# View the summaries for all regression models
+for (model_summary in regression_models) {
+  print(model_summary)
+}
+
+
+#################### ASSESS IMPACT OF TRANSUFION ON MORTALITY USING Surival ANalysis################################
 
 ## For survival analysis and having time to event, we will utilize the ICU admission and discharge dates 
-## Let's add the death date, icu admission, and icu discharge variables which will be helpful in our downstream analysis for assessing mortality outcome 
+## Let's add icu admission, and icu discharge variables which will be helpful in our downstream analysis for assessing mortality outcome 
 
 # Convert ICU.Admission.Date.Time to Date format
 data$ICU.Admission.Date.Time <- as.Date(data$ICU.Admission.Date.Time)
 
-# Convert ICU.Admission.Date.Time to Date format
+# Convert ICU.Discharge.Date.Time to Date format
 data$ICU.Discharge.Date.Time <- as.Date(data$ICU.Discharge.Date.Time)
 
+# Merge ICU admission and discharge times into Post_df_1
+Post_df_1$ICU.Admission.Date.Time <- data$ICU.Admission.Date.Time
+Post_df_1$ICU.Discharge.Date.Time <- data$ICU.Discharge.Date.Time
 
-Post_df_1$ICU.Admission.Date.Time <- data$ICU.Admission.Date.Time 
+# Calculate Survival Time
+Post_df_1$Survival_Time <- ifelse(!is.na(Post_df_1$DEATH_DATE),
+                                  as.numeric(difftime(Post_df_1$DEATH_DATE, Post_df_1$ICU.Admission.Date.Time, units = "days")),
+                                  as.numeric(difftime(Post_df_1$ICU.Discharge.Date.Time, Post_df_1$ICU.Admission.Date.Time, units = "days")))
 
-Post_df_1$ICU.Admission.Date.Time <- data$ICU.Discharge.Date.Time
+# Create Status Variable
+Post_df_1$Status <- ifelse(!is.na(Post_df_1$DEATH_DATE), 1, 0)
 
-# Load necessary libraries
-library(survival)
-library(dplyr)
+#################################### Had transfusion is optional ####################
+# Let's fit a survival model with all predcitors first. Iteration adjusted because model is complex and the transfusion variables can be very corelated
+summary(coxph(Surv(Survival_Time, Status) ~ Had.Transfusion + Type + Gender..male. + Age + BMI + COPD + Cystic.Fibrosis + Interstitial.Lung.Disease + Pulm_Other + Coronary.Artery.Disease + 
+                     Hypertension + Renal.Failure + Stroke.CVA + Liver.Disease, 
+                   data = Post_df_1))
 
-# Filter patients who experienced death
-death_patients <- Post_df_1 %>%
-  filter(Death_Binary == 1)
+# check hazard assumption and see if they converge visually using log log survival plots
+plot(survfit(coxph(Surv(Survival_Time, Status) ~ Had.Transfusion +Type + Gender..male. + Age + BMI + COPD + Cystic.Fibrosis + Interstitial.Lung.Disease + Pulm_Other + Coronary.Artery.Disease + 
+                     Hypertension + Renal.Failure + Stroke.CVA + Liver.Disease, 
+                   data = Post_df_1)), fun='cloglog') # they look proportional and do not cross, good sign
+# does not look like the best might converge on the top 
+cox.zph(coxph(Surv(Survival_Time, Status) ~ Had.Transfusion +Type + Gender..male. + Age + BMI + COPD + Cystic.Fibrosis + Interstitial.Lung.Disease + Pulm_Other + Coronary.Artery.Disease + 
+                Hypertension + Renal.Failure + Stroke.CVA + Liver.Disease, 
+              data = Post_df_1))
 
-# Calculate event times for patients who died
-death_patients$Event_Time <- as.numeric(difftime(death_patients$DEATH_DATE, death_patients$ICU.Admission.Date.Time, units = "days"))
+# Loglik converged before variable  2 ; coefficient may be infinite : most likely because of how related plaelet and blood transufsion are 
 
-# Filter and preprocess censored patients
-censored_patients <- Post_df_1 %>%
-  filter(Death_Binary == 0) %>%
-  filter(!is.na(ICU.Discharge.Date))  # Filter out patients with missing discharge dates
+############################### ####################################################
+### Because massive transufison did not show any signifncant relationship based on the regression, it won't be included in the report for survival analysis 
+# Fit a survival model using Massive transfusion  
+cox_model2 <- coxph(Surv(Survival_Time, Status)~  Massive.Transfusion+Type + Gender..male. +  Age + BMI + COPD + Cystic.Fibrosis + Interstitial.Lung.Disease + Pulm_Other + Coronary.Artery.Disease + 
+                      Hypertension + Renal.Failure + Stroke.CVA + Liver.Disease, 
+                    data = Post_df_1)
+summary(cox_model2)
+# Check proportional hazards assumption
+cox.zph(cox_model2)
+plot(survfit(cox_model2), fun='cloglog') 
+######################################################################
+# Fit a survival model using Total.24hr.RBC including other potential covariates
+cox_model3 <- coxph(Surv(Survival_Time, Status)~ Total.24hr.RBC + Type +Gender..male. + Age + BMI + COPD + Cystic.Fibrosis + Interstitial.Lung.Disease + Pulm_Other + Coronary.Artery.Disease + 
+                      Hypertension + Renal.Failure + Stroke.CVA + Liver.Disease,
+                    data = Post_df_1)
+summary(cox_model3)
+# Check proportional hazards assumption
+cox.zph(cox_model3)
+plot(survfit(cox_model3), fun='cloglog')
 
-# Calculate censored times for patients who survived
-censored_patients$Censored_Time <- as.numeric(difftime(censored_patients$ICU.Discharge.Date, censored_patients$ICU.Admission.Date.Time, units = "days"))
+library(survminer)
+# Grouping Total.24hr.RBC into categories into regular transfusin, massive (10-20 units), and ultra-massive 20+ units 
+Post_df_1$RBC_Transfusion <- cut(Post_df_1$Total.24hr.RBC, 
+                              breaks = c(0, 10, 20, Inf), 
+                              labels = c("0-10 units (Regular)", "10-20 units (Massive)", "20+ units (Ultra-massive)"), 
+                              include.lowest = TRUE)
 
-# Combine the data for analysis
-analysis_data <- rbind(death_patients, censored_patients)
+# Create Kaplan-Meier survival curves
+fit <- survfit(Surv(Survival_Time, Status) ~ RBC_Transfusion, data = Post_df_1)
+ggsurvplot(fit, data = Post_df_1, pval = TRUE, 
+           palette = c("#00BA38", "#F8766D", "#619CFF"),
+           xlab = "Time (days)", ylab = "Survival probability")
 
-# Fit a Cox proportional hazards regression model
-cox_model <- coxph(Surv(Event_Time, Death_Binary) ~ Plasma_Transfusion + Platelet_Transfusion + Blood_Transfusion + Had.Transfusion + Age + BMI, data = analysis_data)
+########################### OPTIONAL: NOT INCLUDED IN REPORT ################
+# Load library for plotting
+library(survminer)
+# Create Kaplan-Meier survival curves
+ggsurvplot(survfit(Surv(Survival_Time, Status) ~ Had.Transfusion, data = Post_df_1), data = Post_df_1)
 
-# Summarize the model
-summary(cox_model)
+# Create Kaplan-Meier survival curves
+ggsurvplot(survfit(Surv(Survival_Time, Status) ~ Massive.Transfusion, data = Post_df_1), data = Post_df_1)
 
-
-
-
-
-########################################### TO BE DELETED BELOW THIS ####
-
-# Load necessary libraries
-library(survival)
-
-# Had.Transfusion - binary (1 if had a transfusion, 0 otherwise)
-# ICU.Admission.Date.Time - start date
-# DEATH_DATE - if the patient died, this should be the date of death
-# If DEATH_DATE is NA, it means the patient was censored (did not die during the study or lost to follow-up)
-
-
-
-
-
-###### ANALYZING THE 120 DAY SURVIVAL ######### 
-# Assuming you have the ICU admission date (ICU_Admission_Date) 
-# and the death date (Death_Date) in your dataframe
-
-library(survival)
-
-# Convert the date columns to Date objects
-Post_df$ICU_Admission_Date <- as.Date(Post_df$ICU_Admission_Date)
-Post_df$Death_Date <- as.Date(Post_df$Death_Date)
-
-# Calculate the days until death or 120 days
-Post_df$Days_Until_Event <- ifelse(is.na(Post_df$Death_Date),
-                                   120, 
-                                   as.numeric(Post_df$Death_Date - Post_df$ICU_Admission_Date))
-
-# Censor those who survived more than 120 days
-Post_df$Status <- ifelse(Post_df$Days_Until_Event >= 120, 0, 1)
-
-# Create the survival object
-surv_obj <- Surv(time = Post_df$Days_Until_Event, event = Post_df$Status)
-
-# You can now use this surv_obj for survival analysis, like Cox regression
-# cox_model <- coxph(surv_obj ~ predictor_variables, data = Post_df)
-
-
-#############################################################
-### To be deleted because done before variable selection ####
-##############################################################
-
-###### Creating time to event variables 
-## Subtract death date from icu admission date to get accurate day of being alive
-## have to make sure they have same format
-
-
-
-
-# Combining the three "Alive Status" variables into one to aid downstream analysis. 
-Post_df_1 <- Post_df_1 %>%
-  mutate(Minimum_Alive_Days = case_when(
-    ALIVE_12MTHS_YN == "Y" ~ 365,
-    ALIVE_90DAYS_YN == "Y" ~ 90,
-    ALIVE_30DAYS_YN == "Y" ~ 30,
-    TRUE ~ 0
-  ))
 glimpse(Post_df_1)
 
+###### Analyze the survival at 30 days, 90 days, and 12 months in relation to whether patients had a transfusion OPTIONALLLL######### 
+library(scales)
 
-# The study period will be selected based on the intial icu admission date and the last death date 
-# it is 2018-01-05 and 2020-01-22 
-# so the study period will be the different between these 
+# Reshape the data and adjust labels for Had.Transfusion plot
+long_Had.transfusion <- Post_df_1 %>%
+  select(ALIVE_30DAYS_YN, ALIVE_90DAYS_YN, ALIVE_12MTHS_YN, Had.Transfusion) %>%
+  pivot_longer(cols = starts_with("ALIVE"), names_to = "Time_Point", values_to = "Status") %>%
+  mutate(Time_Point = case_when(
+    Time_Point == "ALIVE_30DAYS_YN" ~ "30 Days",
+    Time_Point == "ALIVE_90DAYS_YN" ~ "90 Days",
+    Time_Point == "ALIVE_12MTHS_YN" ~ "12 Months",
+    TRUE ~ Time_Point
+  ),
+  Status = ifelse(Status == "Y", "Alive", "Dead"),
+  Time_Point = factor(Time_Point, levels = c("30 Days", "90 Days", "12 Months"))) # Order the levels
 
-earliest_admission_date <- as.Date("2018-01-05")
-latest_death_date <- as.Date("2020-01-22")
-
-# Calculate the duration of the study period in days
-study_period_days <- as.numeric(latest_death_date - earliest_admission_date)
-
-
-# Calculate Survival Time only for deceased patients ( those who have 747 (study period) are assumed to be still be alive)
-data$Days_Alive <- ifelse(is.na(data$DEATH_DATE), 
-                          747, 
-                          as.numeric(data$DEATH_DATE - data$ICU.Admission.Date.Time))
-
-# Add this time to event variable (Days_Alive) to Post_df
-Post_df_1$Days_Alive<- data$Days_Alive 
-
-# Create a binary survival status variable
-Post_df_1$Status <- ifelse((Post_df_1$Days_Alive == 747), 0, 1) # 0 for censored, 1 for death
-
-
-# Cox proportional hazards modelbut without adjusting for confounders
-cox_model <- coxph(Surv(time = Days_Alive, event = Status) ~ Total.24hr.RBC, data = Post_df_1)
-summary(cox_model) # not significant 
-
-# Check proportional hazards assumption
-# Visually using log log survival plots
-plot(survfit(cox_model), fun='cloglog') # they look proportional and do not cross, good sign
-
-# or statistically using Schoenfeld residuals
-cox.zph(cox_model) # interpretation for that: 
-# Generally, a high p-value (typically >0.05) suggests that the proportional hazards assumption is not violated for that variable.
-#The 'GLOBAL' test provides an overall test for the assumption across all variables. A high p-value here (0.465) indicates that 
-#there's no global violation of the proportional hazards assumption in your model.
+# Create a summary plot for Had.Transfusion
+ggplot(long_Had.transfusion, aes(x = Time_Point, fill = Status)) +
+  geom_bar(position = "dodge") +
+  geom_text(aes(label = paste0(round((..count..)/sum(..count..) * 100, 1), "%")), stat = "count", position = position_dodge(width = 0.9), vjust = -0.25) +
+  facet_wrap(~ Had.Transfusion) +
+  labs(title = "Survival Status at Different Time Points For Any Type of Transfusion",
+       x = "Time Point",
+       y = "Count",
+       fill = "Survival Status") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2")
 
 
+# Interpret: 
+# for example: "4% Dead at 12mths" for patients who did not have a massive transfusion, it means that 4% of patients in the non-transfusion group were recorded as dead 12mths post-surgery.
+# NOT REALLY SURE HOW TO INERPRET
 
 
+# Repeat the same steps for Massive.Transfusion
+long_MT <- Post_df_1 %>%
+  select(ALIVE_30DAYS_YN, ALIVE_90DAYS_YN, ALIVE_12MTHS_YN, Massive.Transfusion) %>%
+  pivot_longer(cols = starts_with("ALIVE"), names_to = "Time_Point", values_to = "Status") %>%
+  mutate(Time_Point = case_when(
+    Time_Point == "ALIVE_30DAYS_YN" ~ "30 Days",
+    Time_Point == "ALIVE_90DAYS_YN" ~ "90 Days",
+    Time_Point == "ALIVE_12MTHS_YN" ~ "12 Months",
+    TRUE ~ Time_Point
+  ),
+  Status = ifelse(Status == "Y", "Alive", "Dead"),
+  Time_Point = factor(Time_Point, levels = c("30 Days", "90 Days", "12 Months"))) # Order the levels
 
-# cox model but including all the relevant variables 
-cox_model_enhanced <- coxph(Surv(time = Days_Alive, event = Status) ~ 
-                              Total.24hr.RBC + Type + Gender..male. + Age + BMI +
-                              COPD + Cystic.Fibrosis + Interstitial.Lung.Disease +
-                              Pulm_Other + Coronary.Artery.Disease + Hypertension +
-                              Renal.Failure + Stroke.CVA + Liver.Disease + 
-                              ExVIVO.Lung.Perfusion + Blood.Loss, data = Post_df_1)
-
-
-plot(survfit(cox_model_enhanced), fun='cloglog') # looks good, proportional and no crossing.
-cox.zph(cox_model_enhanced)
-
-summary(cox_model_enhanced) #doesn't show any statistically significant predictors for the hazard of death among the variables included (p> 0.05 for all)
-
-
-########### Lets include massive transfusion & remove rbc and intracellular in a new dataset
-Post_df_MT <- Post_df %>% 
-  select(-c(Total.24hr.RBC))
-
-
-# Add this time to event variable (Days_Alive) to Post_df
-Post_df_MT$Days_Alive<- data$Days_Alive 
-
-# Create a binary survival status variable
-Post_df_MT$Status <- ifelse((Post_df_1$Days_Alive == 747), 0, 1) # 0 for censored, 1 for death
-
-
-# Lets see massive transfusion  
-cox_model2 <- coxph(Surv(time = Days_Alive, event = Status) ~ Massive.Transfusion, data = Post_df_MT)
-summary(cox_model2) # not significant too p = 0.609
-plot(survfit(cox_model2), fun='cloglog')
-
-
-# Load necessary libraries
-library(survival)
-library(survminer)
-
-# Create a survival object
-surv_object <- Surv(time = Post_df$Days_Alive, event = Post_df_MT$Status)
-
-# Fit Kaplan-Meier survival curves
-km_fit <- survfit(surv_object ~ Massive.Transfusion, data = Post_df_MT)
-
-# Plot Kaplan-Meier survival curves
-ggsurvplot(km_fit, 
-           data = Post_df_MT, 
-           title = "Survival Curves by Massive Transfusion Status",
-           xlab = "Days",
-           ylab = "Survival Probability")
-
-
-
-######################### LETS USE 365 DAYS AS OUR STUDY PERIOD 
-# Calculate Time to Event of death in days and for those that have NA for death date, who we assume survived or did not experience death yet, we input 365 days for them
-data$Time_to_event <- ifelse(is.na(data$DEATH_DATE), 365, as.numeric(data$DEATH_DATE - data$ICU.Admission.Date.Time))
-
-# Add Time_to_event to Post_df
-Post_df_1$Time_to_event_year <- data$Time_to_event
-
-# Create a binary survival status variable
-# 0 for censored or death after one year, 1 for death within one year
-Post_df_1$Status_for_year <- ifelse(data$Time_to_event >= 365, 0, 1)
-
-# Cox proportional hazards model
-cox_model_year <- coxph(Surv(time = Time_to_event_year, event = Status_for_year) ~ Total.24hr.RBC, data = Post_df_1)
-summary(cox_model_year) # still no signifiant results where p = 0.6
-
-
-
-# cox model but including all the relevant variables and using 1 year study period, dataset used is including the total 24 rbcs
-cox_model_all_year <- coxph(Surv(time = Time_to_event_year, event = Status_for_year) ~ 
-                              Total.24hr.RBC + Type + Gender..male. + Age + BMI +
-                              COPD + Cystic.Fibrosis + Interstitial.Lung.Disease +
-                              Pulm_Other + Coronary.Artery.Disease + Hypertension +
-                              Renal.Failure + Stroke.CVA + Liver.Disease + 
-                              ExVIVO.Lung.Perfusion + Blood.Loss, data = Post_df_1)
-
-## WARNING MESSAGE:  Loglik converged before variable  14 ; coefficient may be infinite.
-plot(survfit(cox_model_all_year), fun='cloglog') # looks good, proportional and no crossing.
-cox.zph(cox_model_all_year)
-summary(cox_model_all_year)
-
-
-# removed variable 14 and onwards 
-cox_model_all_year <- coxph(Surv(time = Time_to_event_year, event = Status_for_year) ~ 
-                              Total.24hr.RBC + Type + Gender..male. + Age + BMI +
-                              COPD + Cystic.Fibrosis + Interstitial.Lung.Disease +
-                              Pulm_Other + Coronary.Artery.Disease + Hypertension +
-                              Renal.Failure, data = Post_df_1)
-plot(survfit(cox_model_all_year), fun='cloglog') # looks good, proportional and no crossing.
-cox.zph(cox_model_all_year) # cystic fibrosis close to violating (0.08) assumption
-summary(cox_model_all_year) 
-
-#### YAYYYYYY we have BMI as a signifncant predictor of hazard 
-# interpret: 1 unit higher BMI corresponds to 15% increase of the hazard to experience death
-# OR each unit increase in BMI, the hazard of the event occurring increases by a factor of about 1.15, holding all other variables constant.
-
-
-
-
-######### lets use the dataset that include massive transfuiion  
-
-# Add Time_to_event to Post_df
-Post_df_MT$Time_to_event_year <- data$Time_to_event
-
-# Create a binary survival status variable
-# 0 for censored or death after one year, 1 for death within one year
-Post_df_MT$Status_for_year <- ifelse(data$Time_to_event >= 365, 0, 1)
-
-# Cox proportional hazards model
-cox_model_year_transfusion <- coxph(Surv(time = Time_to_event_year, event = Status_for_year) ~ Massive.Transfusion, data = Post_df_MT)
-summary(cox_model_year_transfusion) # still no significant results 
-
-# Create a survival object
-surv_object2 <- Surv(time = Post_df$Time_to_event_year, event = Post_df$Status_for_year)
-
-# Fit Kaplan-Meier survival curves
-km_fit2 <- survfit(surv_object2 ~ Massive.Transfusion, data = Post_df_MT)
-
-# Plot Kaplan-Meier survival curves
-ggsurvplot(km_fit2, 
-           data = Post_df_MT, 
-           title = "Survival Curves by Massive Transfusion Status",
-           xlab = "Days",
-           ylab = "Survival Probability")
-####crosses or line on the survival curves represent  the censored data points
-### in this case here, they represent those who were still alive at the end of the one-year study period (365 days), or died after the one-year study period
-
-
-
-
-
-
-
-
-
+# Create a summary plot for Massive.Transfusion
+ggplot(long_MT, aes(x = Time_Point, fill = Status)) +
+  geom_bar(position = "dodge") +
+  geom_text(aes(label = paste0(round((..count..)/sum(..count..) * 100, 1), "%")), stat = "count", position = position_dodge(width = 0.9), vjust = -0.2) +
+  facet_wrap(~ Massive.Transfusion) +
+  labs(title = "Survival Status at Different Time Points (Massive Transfusion)",
+       x = "Time Point",
+       y = "Count",
+       fill = "Survival Status") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set3")
 
