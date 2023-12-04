@@ -15,6 +15,7 @@ library(survival)
 library(car)
 library(funModeling)
 library(glmnet)
+library(survminer)
 
 
 ##########################################
@@ -1120,7 +1121,6 @@ cox.zph(cox_model3)
 plot(survfit(cox_model3), fun='cloglog')
 
 
-library(survminer)
 # Grouping Total.24hr.RBC into categories into regular transfusin, massive (10-20 units), and ultra-massive 20+ units 
 Post_df_1$RBC_Transfusion <- cut(Post_df_1$Total.24hr.RBC, 
                                  breaks = c(0, 10, 20, Inf), 
@@ -1133,6 +1133,8 @@ ggsurvplot(fit, data = Post_df_1, pval = TRUE,
            palette = c("#00BA38", "#F8766D", "#619CFF"),
            xlab = "Time (days)", ylab = "Survival probability")
 
+
+# Please see report for insights into these results. 
 
 ### ADDITIONAL INVESTIGATION: NOT INCLUDED IN REPORT ###
 
